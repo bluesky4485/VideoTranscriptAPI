@@ -13,6 +13,7 @@ from downloaders.douyin import DouyinDownloader
 from downloaders.bilibili import BilibiliDownloader
 from downloaders.xiaohongshu import XiaohongshuDownloader
 from downloaders.youtube import YoutubeDownloader
+from downloaders.xiaoyuzhou import XiaoyuzhouDownloader
 
 
 class TestDownloaderFactory(unittest.TestCase):
@@ -41,6 +42,12 @@ class TestDownloaderFactory(unittest.TestCase):
         url = "https://www.youtube.com/watch?v=12345"
         downloader = create_downloader(url)
         self.assertIsInstance(downloader, YoutubeDownloader)
+    
+    def test_create_downloader_xiaoyuzhou(self):
+        """测试创建小宇宙播客下载器"""
+        url = "https://www.xiaoyuzhoufm.com/episode/687893e0a12f9ff06a98a597"
+        downloader = create_downloader(url)
+        self.assertIsInstance(downloader, XiaoyuzhouDownloader)
     
     def test_create_downloader_unsupported(self):
         """测试创建不支持的下载器"""
@@ -135,6 +142,71 @@ class TestBilibiliDownloader(unittest.TestCase):
         self.assertEqual(info["video_title"], "测试视频")
         self.assertEqual(info["author"], "测试作者")
         self.assertEqual(info["platform"], "bilibili")
+
+
+class TestXiaoyuzhouDownloader(unittest.TestCase):
+    """测试小宇宙播客下载器"""
+    
+    @patch('downloaders.xiaoyuzhou.requests.get')
+    def test_get_video_info(self, mock_get):
+        """测试获取小宇宙播客信息"""
+        # 模拟HTML响应
+        mock_response = MagicMock()
+        mock_response.text = '''
+        <html>
+        <head>
+            <title>E196 对话曹丰泽：只要不饿死，人生没有必修课 - 知行小酒馆 | 小宇宙 - 听播客，上小宇宙</title>
+            <meta property="og:title" content="E196 对话曹丰泽：只要不饿死，人生没有必修课 - 知行小酒馆">
+            <meta property="og:audio" content="https://media.xyzcdn.net/6013f9f58e2f7ee375cf4216/ls_H_O7Kt-7euS0WzYHUB9HTTt9r.m4a">
+        </head>
+        </html>
+        '''
+        mock_response.raise_for_status = MagicMock()
+        mock_response.encoding = 'utf-8'
+        mock_get.return_value = mock_response
+        
+        downloader = XiaoyuzhouDownloader()
+        
+        # 调用被测试的方法
+        info = downloader.get_video_info("https://www.xiaoyuzhoufm.com/episode/687893e0a12f9ff06a98a597")
+        
+        # 验证结果
+        self.assertEqual(info["video_id"], "687893e0a12f9ff06a98a597")
+        self.assertEqual(info["video_title"], "E196 对话曹丰泽：只要不饿死，人生没有必修课")
+        self.assertEqual(info["author"], "知行小酒馆")
+        self.assertEqual(info["download_url"], "https://media.xyzcdn.net/6013f9f58e2f7ee375cf4216/ls_H_O7Kt-7euS0WzYHUB9HTTt9r.m4a")
+        self.assertEqual(info["platform"], "xiaoyuzhou")
+        self.assertTrue(info["filename"].startswith("xiaoyuzhou_687893e0a12f9ff06a98a597_"))
+        self.assertTrue(info["filename"].endswith(".m4a"))
+    
+    def test_can_handle(self):
+        """测试URL处理能力判断"""
+        downloader = XiaoyuzhouDownloader()
+        
+        # 应该能处理的URL
+        self.assertTrue(downloader.can_handle("https://www.xiaoyuzhoufm.com/episode/12345"))
+        
+        # 不应该能处理的URL
+        self.assertFalse(downloader.can_handle("https://www.youtube.com/watch?v=12345"))
+        self.assertFalse(downloader.can_handle("https://www.bilibili.com/video/BV12345"))
+    
+    def test_extract_episode_id(self):
+        """测试剧集ID提取"""
+        downloader = XiaoyuzhouDownloader()
+        
+        # 正常URL
+        episode_id = downloader._extract_episode_id("https://www.xiaoyuzhoufm.com/episode/687893e0a12f9ff06a98a597")
+        self.assertEqual(episode_id, "687893e0a12f9ff06a98a597")
+        
+        # 异常URL，应该抛出异常
+        with self.assertRaises(ValueError):
+            downloader._extract_episode_id("https://www.example.com/invalid")
+    
+    def test_get_subtitle(self):
+        """测试获取字幕"""
+        downloader = XiaoyuzhouDownloader()
+        result = downloader.get_subtitle("https://www.xiaoyuzhoufm.com/episode/12345")
+        self.assertIsNone(result)
 
 
 if __name__ == '__main__':

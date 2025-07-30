@@ -20,3 +20,4 @@ sounddevice
 pypinyin
 watchdog
 srt
+beautifulsoup4>=4.9.0

@@ -5,7 +5,7 @@
 ## 功能特点
 
 - 提供API接口，接收视频URL，返回视频的转录文本
-- 支持多种平台：抖音、Bilibili、小红书、YouTube
+- 支持多种平台：抖音、Bilibili、小红书、YouTube、小宇宙播客
 - 支持两种获取转录方式：
   - 直接下载平台提供的字幕（如YouTube）
   - 下载视频/音频，使用CapsWriter-Offline客户端发送至服务器进行转录
@@ -27,6 +27,7 @@
 │   ├── bilibili.py           # B站下载器
 │   ├── xiaohongshu.py        # 小红书下载器
 │   ├── youtube.py            # YouTube下载器
+│   ├── xiaoyuzhou.py         # 小宇宙播客下载器
 │   └── factory.py            # 下载器工厂
 ├── transcriber/              # 视频转录模块
 │   ├── __init__.py
@@ -165,7 +166,7 @@ python main.py --start
 curl -X POST "http://localhost:8000/api/transcribe" \
   -H "Authorization: Bearer your_api_token_here" \
   -H "Content-Type: application/json" \
-  -d '{"url":"https://www.youtube.com/watch?v=sample_id"}'
+  -d '{"url":"https://www.xiaoyuzhoufm.com/episode/687893e0a12f9ff06a98a597"}'
 ```
 
 响应:
@@ -209,7 +210,7 @@ curl -X GET "http://localhost:8000/api/task/task_1" \
 #### 测试单个URL
 
 ```bash
-python scripts/test_url.py url "https://www.youtube.com/watch?v=sample_id"
+python scripts/test_url.py url "https://www.xiaoyuzhoufm.com/episode/687893e0a12f9ff06a98a597"
 ```
 
 #### 测试URL列表
