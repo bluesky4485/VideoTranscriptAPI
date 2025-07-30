@@ -156,7 +156,7 @@ class TestXiaoyuzhouDownloader(unittest.TestCase):
         <html>
         <head>
             <title>E196 对话曹丰泽：只要不饿死，人生没有必修课 - 知行小酒馆 | 小宇宙 - 听播客，上小宇宙</title>
-            <meta property="og:title" content="E196 对话曹丰泽：只要不饿死，人生没有必修课 - 知行小酒馆">
+            <meta property="og:title" content="E196 对话曹丰泽：只要不饿死，人生没有必修课">
             <meta property="og:audio" content="https://media.xyzcdn.net/6013f9f58e2f7ee375cf4216/ls_H_O7Kt-7euS0WzYHUB9HTTt9r.m4a">
         </head>
         </html>
@@ -207,6 +207,33 @@ class TestXiaoyuzhouDownloader(unittest.TestCase):
         downloader = XiaoyuzhouDownloader()
         result = downloader.get_subtitle("https://www.xiaoyuzhoufm.com/episode/12345")
         self.assertIsNone(result)
+    
+    @patch('downloaders.xiaoyuzhou.requests.get')
+    def test_get_video_info_fallback_parsing(self, mock_get):
+        """测试标题解析失败时的降级处理"""
+        # 模拟HTML响应 - 不标准的title格式
+        mock_response = MagicMock()
+        mock_response.text = '''
+        <html>
+        <head>
+            <title>不标准的标题格式</title>
+            <meta property="og:title" content="测试播客标题">
+            <meta property="og:audio" content="https://media.xyzcdn.net/test.m4a">
+        </head>
+        </html>
+        '''
+        mock_response.raise_for_status = MagicMock()
+        mock_response.encoding = 'utf-8'
+        mock_get.return_value = mock_response
+        
+        downloader = XiaoyuzhouDownloader()
+        
+        # 调用被测试的方法
+        info = downloader.get_video_info("https://www.xiaoyuzhoufm.com/episode/123abc456def")
+        
+        # 验证结果 - 应该使用og:title作为标题
+        self.assertEqual(info["video_title"], "测试播客标题")
+        self.assertEqual(info["author"], "未知作者")  # 无法解析时的默认值
 
 
 if __name__ == '__main__':
