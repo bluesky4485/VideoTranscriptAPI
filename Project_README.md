@@ -33,8 +33,7 @@
 │   ├── __init__.py
 │   ├── transcriber.py        # 转录器实现（基于CapsWriter-Offline）
 │   ├── capswriter_client.py  # CapsWriter精简客户端
-│   ├── funasr_client.py      # FunASR说话人识别客户端
-│   └── srt_converter.py      # 字幕格式转换器
+│   └── funasr_client.py      # FunASR说话人识别客户端
 ├── utils/                    # 工具模块
 │   ├── __init__.py
 │   ├── logger.py             # 日志工具

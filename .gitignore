@@ -9,6 +9,8 @@ venv/
 env/
 ENV/
 
+sample_files/test_files/
+
 # 日志文件
 logs/
 *.log
@@ -25,7 +27,6 @@ output/
 models/
 
 # 测试文件
-test_subtitle.srt
 test_output/
 
 # IDE配置

@@ -8,66 +8,7 @@ from unittest.mock import MagicMock, patch
 # 添加项目根目录到导入路径
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from transcriber import Transcriber, SRTConverter
-
-
-class TestSRTConverter(unittest.TestCase):
-    """测试SRT转换器"""
-    
-    def setUp(self):
-        """创建临时SRT文件用于测试"""
-        self.test_srt_content = """1
-00:00:00,000 --> 00:00:05,000
-这是第一行字幕
-
-2
-00:00:05,500 --> 00:00:10,000
-这是第二行字幕
-
-3
-00:00:10,500 --> 00:00:15,000
-这是第三行字幕
-"""
-        self.test_srt_file = "test_subtitle.srt"
-        with open(self.test_srt_file, "w", encoding="utf-8") as f:
-            f.write(self.test_srt_content)
-    
-    def tearDown(self):
-        """清理测试文件"""
-        if os.path.exists(self.test_srt_file):
-            os.remove(self.test_srt_file)
-    
-    def test_parse_srt(self):
-        """测试解析SRT文件"""
-        converter = SRTConverter(self.test_srt_file)
-        self.assertEqual(len(converter.segments), 3)
-        self.assertEqual(converter.segments[0]['index'], 1)
-        self.assertEqual(converter.segments[0]['text'], "这是第一行字幕")
-        self.assertEqual(converter.segments[0]['start_time'], "00:00:00,000")
-        self.assertEqual(converter.segments[0]['end_time'], "00:00:05,000")
-    
-    def test_to_lrc(self):
-        """测试转换为LRC格式"""
-        converter = SRTConverter(self.test_srt_file)
-        lrc_content = converter.to_lrc()
-        
-        # 验证是否包含LRC文件头
-        self.assertIn("[ti:Transcription]", lrc_content)
-        self.assertIn("[ar:Whisper]", lrc_content)
-        
-        # 验证是否包含时间戳和文本
-        self.assertIn("[00:00:00]这是第一行字幕", lrc_content)
-        self.assertIn("[00:00:05]这是第二行字幕", lrc_content)
-        self.assertIn("[00:00:10]这是第三行字幕", lrc_content)
-    
-    def test_to_text(self):
-        """测试转换为纯文本"""
-        converter = SRTConverter(self.test_srt_file)
-        text_content = converter.to_text()
-        
-        # 验证纯文本内容
-        expected_text = "这是第一行字幕\n这是第二行字幕\n这是第三行字幕"
-        self.assertEqual(text_content, expected_text)
+from transcriber import Transcriber
 
 
 @patch('transcriber.transcriber.client_transcriber')
