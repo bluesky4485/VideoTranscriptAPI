@@ -219,6 +219,17 @@ curl -X POST "http://localhost:8000/api/transcribe" \
   -d '{"url":"https://www.xiaoyuzhoufm.com/episode/687893e0a12f9ff06a98a597","use_speaker_recognition": true}'
 ```
 
+**使用自定义企微webhook**：
+```bash
+curl -X POST "http://localhost:8000/api/transcribe" \
+  -H "Authorization: Bearer your_api_token_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url":"https://www.xiaoyuzhoufm.com/episode/687893e0a12f9ff06a98a597",
+    "wechat_webhook":"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your-custom-key"
+  }'
+```
+
 **指定转录引擎**：
 ```bash
 curl -X POST "http://localhost:8000/api/transcribe" \
