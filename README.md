@@ -17,6 +17,7 @@
 - 提供企业微信通知功能，实时通知任务状态
 - 完善的日志系统，方便问题排查
 - LLM集成：支持转录文本的校对和总结
+- **智能缓存系统**：基于SQLite数据库的缓存管理，支持自动清理和完整性验证
 
 ## 项目结构
 
@@ -42,7 +43,9 @@
 ├── utils/                    # 工具模块
 │   ├── __init__.py
 │   ├── logger.py             # 日志工具
-│   └── wechat.py             # 企业微信通知
+│   ├── wechat.py             # 企业微信通知
+│   ├── cache_manager.py      # 智能缓存管理器
+│   └── metadata_cache.py     # 元数据缓存（兼容性）
 ├── tests/                    # 测试模块
 │   ├── __init__.py
 │   ├── README.md             # 测试说明文档
@@ -64,6 +67,7 @@
 ├── config.json               # 配置文件
 ├── requirements.txt          # 项目依赖
 ├── run_tests.py              # 测试运行脚本
+├── cleanup_cache.py          # 缓存清理脚本
 ├── main.py                   # 主程序入口
 └── README.md                 # 项目说明
 ```
@@ -174,7 +178,9 @@ pip install -r requirements.txt
   - `queue_size`: 队列大小
 - `storage`: 存储配置
   - `temp_dir`: 临时文件目录
-  - `output_dir`: 输出文件目录
+  - `output_dir`: 输出文件目录（旧版本兼容）
+  - `cache_dir`: 智能缓存系统目录
+  - `cache_retention_days`: 缓存保留天数（默认360天）
 - `wechat`: 企业微信配置
   - `webhook`: 企业微信webhook地址
 - `log`: 日志配置
@@ -363,6 +369,78 @@ python run_tests.py
   }
 }
 ```
+
+## 智能缓存系统
+
+### 缓存架构
+
+项目采用基于 SQLite 数据库 + 文件系统的智能缓存架构：
+
+**数据库存储（元数据）**：
+- 平台信息（youtube/bilibili/douyin等）
+- 视频URL、标题、作者、描述
+- 媒体ID和说话人识别标识
+- 文件位置和时间戳
+
+**文件系统存储（实际内容）**：
+```
+cache_dir/
+├── platform/
+│   └── YYYY/
+│       └── YYYYMM/
+│           └── media_id/
+│               ├── transcript_funasr.json      # FunASR转录结果
+│               ├── transcript_capswriter.txt   # CapsWriter转录结果
+│               ├── llm_calibrated.txt         # LLM校对文本
+│               └── llm_summary.txt            # LLM总结文本
+```
+
+### 智能缓存特性
+
+1. **智能查询逻辑**：
+   - 当 `use_speaker_recognition=true` 时，只使用带说话人识别的缓存
+   - 当 `use_speaker_recognition=false` 时，优先使用带说话人识别的缓存（信息更丰富）
+
+2. **LLM结果缓存**：
+   - 自动缓存LLM校对和总结结果
+   - 再次请求时直接返回缓存结果，避免重复调用LLM API
+   - 大幅提升响应速度，降低API成本
+
+3. **自动完整性维护**：
+   - 查询时自动检测文件完整性
+   - 自动删除无效的数据库记录
+   - 保持数据库与文件系统一致性
+
+### 缓存管理
+
+**手动清理缓存**：
+```bash
+# 清理超过保留期限的旧缓存，并验证完整性
+python cleanup_cache.py
+```
+
+**配置缓存保留时间**：
+```json
+{
+  "storage": {
+    "cache_dir": "./cache_dir",
+    "cache_retention_days": 360
+  }
+}
+```
+
+**缓存统计查看**：
+缓存系统提供详细的使用统计，包括：
+- 总记录数和存储空间占用
+- 各平台缓存分布
+- 说话人识别功能使用情况
+
+### 性能优势
+
+- **首次请求**：下载 → 转录 → LLM处理 → 缓存保存
+- **缓存命中**：直接返回转录和LLM结果（秒级响应）
+- **API成本节省**：避免重复的LLM调用
+- **存储优化**：自动清理和时间分层存储
 
 ## 运行测试
 
