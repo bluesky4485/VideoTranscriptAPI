@@ -29,7 +29,8 @@
     },
     "web": {
       "base_url": "http://localhost:8000",
-      "enable_view_links": true
+      "enable_view_links": true,
+      "timezone": "UTC+8"
     },
     "wechat": {
       "webhook": "your-webhook-url-here"
