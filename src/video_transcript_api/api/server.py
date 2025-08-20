@@ -17,6 +17,7 @@ from typing import Optional, Dict, Any
 from ..utils import setup_logger, load_config, WechatNotifier, MetadataCache, CacheManager
 from ..utils.webhook_rate_limiter import get_rate_limiter_stats, get_webhook_status
 from ..utils.markdown_renderer import render_markdown_to_html, get_base_url
+from ..utils.dialog_renderer import render_transcript_content
 from ..utils.timezone_helper import format_datetime_for_display
 from ..utils.llm_enhanced import EnhancedLLMProcessor
 from ..downloaders import create_downloader
@@ -1147,9 +1148,10 @@ async def view_transcript(view_token: str, request: Request):
                 {"request": request, **view_data}
             )
         elif view_data['status'] == 'success':
-            # 服务端渲染Markdown
+            # 服务端渲染内容
             view_data['summary_html'] = render_markdown_to_html(view_data.get('summary', ''))
-            view_data['transcript_html'] = render_markdown_to_html(view_data.get('transcript', ''))
+            # 使用对话渲染器处理转录文本，支持多人对话和普通文本
+            view_data['transcript_html'] = render_transcript_content(view_data.get('transcript', ''))
             
             return templates.TemplateResponse(
                 "transcript.html",
