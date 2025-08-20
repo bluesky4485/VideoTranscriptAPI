@@ -16,6 +16,19 @@ def render_markdown_to_html(markdown_text: str) -> str:
         str: 渲染后的HTML
     """
     try:
+        # 类型安全检查：确保输入是字符串
+        if markdown_text is None:
+            return ""
+        
+        if not isinstance(markdown_text, str):
+            logger.warning(f"输入类型不是字符串，而是 {type(markdown_text)}，尝试转换为字符串")
+            # 如果是字典，尝试提取合适的字段
+            if isinstance(markdown_text, dict):
+                # 尝试提取常见的文本字段
+                markdown_text = markdown_text.get('text') or markdown_text.get('content') or str(markdown_text)
+            else:
+                markdown_text = str(markdown_text)
+        
         if not markdown_text:
             return ""
             
