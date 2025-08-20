@@ -93,7 +93,9 @@ curl -X POST "http://localhost:8000/api/transcribe" \
   -d '{"url":"https://example.com/video.mp4"}'
 
 # 响应：202，创建新任务 task_abc123，生成 view_xyz789
-# 查看链接：http://localhost:8000/view/view_xyz789
+# 立即发送企微通知：🔗 【查看链接】🎬 转录任务已创建
+#                  点击查看转录进度和结果：http://localhost:8000/view/view_xyz789
+# 用户立即可以点击查看processing状态
 
 # 任务完成后，第二次请求相同URL
 curl -X POST "http://localhost:8000/api/transcribe" \
@@ -102,8 +104,9 @@ curl -X POST "http://localhost:8000/api/transcribe" \
   -d '{"url":"https://example.com/video.mp4"}'
 
 # 响应：202，创建新任务 task_def456，但复用 view_xyz789
-# 查看链接：http://localhost:8000/view/view_xyz789 (相同链接！)
-# 企微通知：正常发送（使用缓存的转录结果）
+# 立即发送企微通知：🔗 【查看链接】🎬 转录任务已创建
+#                  点击查看转录进度和结果：http://localhost:8000/view/view_xyz789 (相同链接！)
+# 由于有缓存，很快发送完成通知：✅ 【任务完成】视频标题
 ```
 
 ### 场景2：不同参数创建新任务
@@ -129,10 +132,11 @@ curl -X POST "http://localhost:8000/api/transcribe" \
 ## 优势
 
 1. **一致的查看链接**：同一视频（相同参数）始终使用相同的`view_token`
-2. **完整的通知流程**：每次请求都会正常发送企微通知
-3. **避免重复处理**：有缓存时直接使用，避免重复下载转录
-4. **灵活的任务管理**：每次请求都有独立的`task_id`用于追踪
-5. **更好的用户体验**：用户可以重复使用相同的分享链接
+2. **即时通知体验**：任务创建后立即发送包含查看链接的企微通知
+3. **完整状态跟踪**：用户可以立即访问查看页面，观察从processing到完成的全过程
+4. **避免重复处理**：有缓存时直接使用，避免重复下载转录
+5. **灵活的任务管理**：每次请求都有独立的`task_id`用于追踪
+6. **更好的用户体验**：用户可以重复使用相同的分享链接
 
 ## 测试
 
