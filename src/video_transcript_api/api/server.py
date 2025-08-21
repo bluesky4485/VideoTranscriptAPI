@@ -8,8 +8,9 @@ import re
 import threading
 import queue
 from fastapi import FastAPI, HTTPException, Depends, Header, BackgroundTasks, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, Dict, Any
@@ -66,6 +67,10 @@ enhanced_llm_processor = EnhancedLLMProcessor(config)
 # 获取模板目录路径
 template_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "web", "templates")
 templates = Jinja2Templates(directory=template_dir)
+
+# 配置静态文件服务
+static_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "web", "static")
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # 任务队列
 task_queue = asyncio.Queue(config.get("concurrent", {}).get("queue_size", 10))
@@ -944,6 +949,26 @@ async def startup_event():
     logger.info("API服务已启动，转录队列和LLM队列处理器已启动")
 
 
+@app.get("/add_task_by_web", response_class=HTMLResponse)
+async def add_task_by_web():
+    """
+    Web添加任务页面路由
+    
+    Returns:
+        FileResponse: 返回index.html文件
+    """
+    try:
+        index_file = os.path.join(static_dir, "index.html")
+        if os.path.exists(index_file):
+            return FileResponse(index_file)
+        else:
+            logger.error(f"Web任务添加页面文件不存在: {index_file}")
+            raise HTTPException(status_code=404, detail="Web任务添加页面文件未找到")
+    except Exception as e:
+        logger.exception(f"访问Web任务添加页面异常: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"访问Web任务添加页面失败: {str(e)}")
+
+
 @app.post("/api/transcribe", response_model=TranscribeResponse, dependencies=[Depends(verify_token)])
 async def transcribe_video(
     request: TranscribeRequest, 
@@ -1020,11 +1045,14 @@ async def transcribe_video(
             logger.warning(f"任务队列已满，拒绝任务: {url}")
             raise HTTPException(status_code=503, detail="任务队列已满，请稍后重试")
         
-        # 返回任务ID
+        # 返回任务ID和view_token
         return TranscribeResponse(
             code=202,
             message="任务已提交",
-            data={"task_id": task_id}
+            data={
+                "task_id": task_id,
+                "view_token": view_token
+            }
         )
     except HTTPException:
         raise
