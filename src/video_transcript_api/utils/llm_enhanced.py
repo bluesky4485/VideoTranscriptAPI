@@ -9,6 +9,7 @@ from .logger import setup_logger
 from .llm import call_llm_api
 from .llm_segmented import SegmentedLLMProcessor
 from .text_segmentation import TextSegmentationProcessor
+from .structured_calibrator import StructuredCalibrator
 
 logger = setup_logger(__name__)
 
@@ -42,6 +43,9 @@ class EnhancedLLMProcessor:
         # 初始化分段处理器
         self.segmentation_processor = TextSegmentationProcessor(config)
         self.segmented_llm_processor = SegmentedLLMProcessor(config)
+        
+        # 初始化结构化校对器
+        self.structured_calibrator = StructuredCalibrator(config)
         
         logger.info("增强LLM处理器初始化完成")
     
@@ -426,7 +430,7 @@ class EnhancedLLMProcessor:
     
     def process_llm_task_with_structure(self, cache_dir: str, funasr_data: Dict, video_metadata: Dict[str, Any]) -> Dict[str, Any]:
         """
-        处理LLM任务并生成结构化输出（新格式）
+        处理LLM任务并生成结构化输出（新格式，含校对）
         
         Args:
             cache_dir: 缓存目录路径
@@ -445,7 +449,7 @@ class EnhancedLLMProcessor:
             author = video_metadata.get('author', '未知作者')
             description = video_metadata.get('description', '')
             
-            logger.info(f"开始结构化LLM处理: {video_title}")
+            logger.info(f"开始结构化LLM处理（含校对）: {video_title}")
             
             # 1. 提取原始说话人信息
             mapping_inference = SpeakerMappingInference()
@@ -458,7 +462,10 @@ class EnhancedLLMProcessor:
             # 2. 生成说话人推断提示词
             speaker_inference_prompt = self._generate_speaker_inference_prompt(funasr_data, original_speakers, video_metadata)
             
-            # 3. 调用LLM进行说话人推断
+            # 3. 保存prompt到文件进行分析
+            self._save_prompt_to_file(speaker_inference_prompt, 'speaker_inference_prompt.txt')
+            
+            # 4. 调用LLM进行说话人推断
             logger.info("执行说话人推断")
             speaker_mapping_result = call_llm_api(
                 prompt=speaker_inference_prompt,
@@ -469,30 +476,41 @@ class EnhancedLLMProcessor:
                 retry_delay=self.retry_delay
             )
             
-            # 4. 解析说话人映射关系
+            # 5. 解析说话人映射关系
             speaker_mapping = self._parse_speaker_mapping_result(speaker_mapping_result, original_speakers)
             
-            # 5. 生成结构化对话内容
-            structured_dialogs = self._generate_structured_dialogs(funasr_data, speaker_mapping)
+            # 6. 提取带时间信息的对话数据
+            logger.info("提取带时间信息的对话数据")
+            dialogs_with_time = StructuredCalibrator.extract_time_enhanced_dialogs_from_funasr(funasr_data, speaker_mapping)
             
-            # 6. 生成文本版本（兼容性）
-            calibrated_text = self._generate_text_from_structured_dialogs(structured_dialogs)
+            # 6. 使用结构化校对器进行校对
+            logger.info("开始结构化校对")
+            calibrated_dialogs = self.structured_calibrator.calibrate_structured_dialogs(dialogs_with_time, video_metadata)
             
-            # 7. 生成总结
+            # 7. 生成兼容性文本版本
+            calibrated_text = self._generate_text_from_calibrated_dialogs(calibrated_dialogs)
+            
+            # 8. 生成总结
+            logger.info("生成总结")
             summary_text = self._generate_summary_from_structured_content(calibrated_text, video_metadata)
             
-            # 8. 构建结构化结果
+            # 9. 构建结构化结果
             structured_result = {
                 'format_version': 'v2',
                 'video_metadata': video_metadata,
                 'original_speakers': original_speakers,
                 'speaker_mapping': speaker_mapping,
-                'dialogs': structured_dialogs,
+                'dialogs': calibrated_dialogs,  # 使用校对后的对话
                 'summary': summary_text,
-                'generated_at': self._get_current_timestamp()
+                'generated_at': self._get_current_timestamp(),
+                'processing_metadata': {
+                    'calibration_enabled': True,
+                    'original_dialog_count': len(dialogs_with_time),
+                    'calibrated_dialog_count': len(calibrated_dialogs)
+                }
             }
             
-            # 9. 保存结果到缓存
+            # 10. 保存结果到缓存
             self._save_structured_result(cache_dir, structured_result, calibrated_text, summary_text)
             
             logger.info(f"结构化LLM处理完成，已保存llm_processed.json到: {cache_dir}")
@@ -545,14 +563,38 @@ class EnhancedLLMProcessor:
 ```
 
 推断规则：
-1. 优先根据内容中的自我介绍、称呼等信息推断
-2. 结合视频标题、作者信息进行合理推测
-3. 如果无法确定，使用描述性身份（如"主持人"、"嘉宾"等）
-4. 确信度请如实评估（0-1之间）
-5. 姓名长度应合理（通常2-4个字符）
+1. **优先使用视频描述中的人名信息**：如果描述中提到具体人名，优先使用这些名字
+2. 根据内容中的自我介绍、称呼等信息进行确认和匹配
+3. 结合视频标题、作者信息进行合理推测
+4. 如果无法确定，使用描述性身份（如"主持人"、"嘉宾"等）
+5. 确信度请如实评估（0-1之间）
+6. 姓名长度应合理（通常2-4个字符）
+7. **保持人名的准确性**：避免随意修改描述中已明确提到的人名
 """
         
         return prompt
+    
+    def _save_prompt_to_file(self, prompt: str, filename: str) -> None:
+        """保存prompt到文件进行分析"""
+        import os
+        from datetime import datetime
+        
+        # 创建调试目录
+        debug_dir = "debug"
+        if not os.path.exists(debug_dir):
+            os.makedirs(debug_dir)
+        
+        # 添加时间戳
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        full_filename = f"{timestamp}_{filename}"
+        file_path = os.path.join(debug_dir, full_filename)
+        
+        try:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(prompt)
+            logger.info(f"Prompt已保存到: {file_path}")
+        except Exception as e:
+            logger.warning(f"保存prompt失败: {e}")
     
     def _extract_context_snippets(self, funasr_data: Dict, speakers: List[str], max_snippets: int = 10) -> str:
         """提取关键的转录片段作为推断上下文"""
@@ -716,6 +758,17 @@ class EnhancedLLMProcessor:
         
         return '\n\n'.join(text_lines)
     
+    def _generate_text_from_calibrated_dialogs(self, calibrated_dialogs: List[Dict[str, Any]]) -> str:
+        """从校对后的对话生成文本版本"""
+        text_lines = []
+        
+        for dialog in calibrated_dialogs:
+            speaker = dialog.get('speaker', 'unknown')
+            content = dialog.get('text', '')
+            text_lines.append(f"{speaker}：{content}")
+        
+        return '\n\n'.join(text_lines)
+    
     def _generate_summary_from_structured_content(self, calibrated_text: str, video_metadata: Dict) -> str:
         """基于结构化内容生成总结"""
         # 复用现有的总结生成逻辑
@@ -723,9 +776,17 @@ class EnhancedLLMProcessor:
         author = video_metadata.get('author', '')
         description = video_metadata.get('description', '')
         
+        # 从校对文本中检测说话人数量
+        import re
+        speaker_pattern = r'[一-鿿]+：'  # 中文名字+冒号
+        unique_speakers = set(re.findall(speaker_pattern, calibrated_text))
+        mock_transcription_data = {
+            'speakers': [speaker.rstrip('：') for speaker in unique_speakers]
+        } if unique_speakers else None
+        
         summary_prompt = self._generate_original_summary_prompt(
             calibrated_text, video_title, author, description, 
-            use_speaker_recognition=True, transcription_data=None
+            use_speaker_recognition=True, transcription_data=mock_transcription_data
         )
         
         return call_llm_api(

@@ -256,7 +256,7 @@ class DialogRenderer:
             
             for dialog in dialogs:
                 speaker = dialog['speaker']
-                content = dialog['content']
+                content = dialog.get('text', dialog.get('content', ''))
                 color = self.get_speaker_color(speaker, speakers)
                 
                 # 智能分段处理
@@ -392,7 +392,7 @@ class DialogRenderer:
             
             for dialog in dialogs:
                 speaker = dialog['speaker']
-                content = dialog['content']
+                content = dialog.get('text', dialog.get('content', ''))
                 color = self.get_speaker_color(speaker, speakers)
                 
                 # 智能分段处理
@@ -579,7 +579,7 @@ class DialogRenderer:
         
         for dialog in dialogs:
             speaker = dialog['speaker']
-            content = dialog['content']
+            content = dialog.get('text', dialog.get('content', ''))
             color = self.get_speaker_color(speaker, speakers)
             
             # 智能分段处理

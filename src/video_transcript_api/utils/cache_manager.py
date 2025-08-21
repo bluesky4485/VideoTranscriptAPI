@@ -783,6 +783,7 @@ class CacheManager:
                         'status': 'success',
                         'title': cache_data.get('title', ''),
                         'author': cache_data.get('author', ''),
+                        'description': cache_data.get('description', ''),  # 添加缺失的description字段
                         'url': task_info['url'],
                         'summary': summary,
                         'transcript': transcript,
