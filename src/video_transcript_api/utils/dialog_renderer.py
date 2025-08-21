@@ -395,6 +395,10 @@ class DialogRenderer:
                 content = dialog.get('text', dialog.get('content', ''))
                 color = self.get_speaker_color(speaker, speakers)
                 
+                # 获取开始时间
+                start_time = dialog.get('start_time', '')
+                time_display = f'<span class="time-tag">{start_time}</span>' if start_time else ''
+                
                 # 智能分段处理
                 smart_content = self.smart_paragraph_split(content)
                 
@@ -405,8 +409,11 @@ class DialogRenderer:
                 
                 html_parts.append(f'''
                 <div class="dialog-item">
-                    <div class="speaker-tag" style="background-color: {color};">
-                        {speaker}
+                    <div class="speaker-header">
+                        <div class="speaker-tag" style="background-color: {color};">
+                            {speaker}
+                        </div>
+                        {time_display}
                     </div>
                     <div class="dialog-content">
                         {content_html}
@@ -582,6 +589,10 @@ class DialogRenderer:
             content = dialog.get('text', dialog.get('content', ''))
             color = self.get_speaker_color(speaker, speakers)
             
+            # 获取开始时间
+            start_time = dialog.get('start_time', '')
+            time_display = f'<span class="time-tag">{start_time}</span>' if start_time else ''
+            
             # 智能分段处理
             smart_content = self.smart_paragraph_split(content)
             
@@ -592,8 +603,11 @@ class DialogRenderer:
             
             html_parts.append(f'''
             <div class="dialog-item">
-                <div class="speaker-tag" style="background-color: {color};">
-                    {speaker}
+                <div class="speaker-header">
+                    <div class="speaker-tag" style="background-color: {color};">
+                        {speaker}
+                    </div>
+                    {time_display}
                 </div>
                 <div class="dialog-content">
                     {content_html}

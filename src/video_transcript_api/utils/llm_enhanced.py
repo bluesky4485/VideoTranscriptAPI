@@ -463,7 +463,7 @@ class EnhancedLLMProcessor:
             speaker_inference_prompt = self._generate_speaker_inference_prompt(funasr_data, original_speakers, video_metadata)
             
             # 3. 保存prompt到文件进行分析
-            self._save_prompt_to_file(speaker_inference_prompt, 'speaker_inference_prompt.txt')
+            # self._save_prompt_to_file(speaker_inference_prompt, 'speaker_inference_prompt.txt')
             
             # 4. 调用LLM进行说话人推断
             logger.info("执行说话人推断")
@@ -579,7 +579,7 @@ class EnhancedLLMProcessor:
         from datetime import datetime
         
         # 创建调试目录
-        debug_dir = "debug"
+        debug_dir = "data/debug"
         if not os.path.exists(debug_dir):
             os.makedirs(debug_dir)
         

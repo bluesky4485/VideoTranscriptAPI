@@ -71,3 +71,4 @@ Thumbs.db
 # 文档构建
 docs/_build/
 debug
+data/debug
