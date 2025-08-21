@@ -490,9 +490,8 @@ class EnhancedLLMProcessor:
             # 7. 生成兼容性文本版本
             calibrated_text = self._generate_text_from_calibrated_dialogs(calibrated_dialogs)
             
-            # 8. 生成总结
-            logger.info("生成总结")
-            summary_text = self._generate_summary_from_structured_content(calibrated_text, video_metadata)
+            # 8. 生成总结（检查是否可以复用已有结果）
+            summary_text = self._get_or_generate_summary(cache_dir, calibrated_text, video_metadata)
             
             # 9. 构建结构化结果
             structured_result = {
@@ -768,6 +767,30 @@ class EnhancedLLMProcessor:
             text_lines.append(f"{speaker}：{content}")
         
         return '\n\n'.join(text_lines)
+    
+    def _get_or_generate_summary(self, cache_dir: str, calibrated_text: str, video_metadata: Dict) -> str:
+        """获取或生成总结（优先复用已有结果）"""
+        import os
+        
+        # 检查是否已有总结文件
+        summary_file = os.path.join(cache_dir, 'llm_summary.txt')
+        
+        if os.path.exists(summary_file):
+            try:
+                with open(summary_file, 'r', encoding='utf-8') as f:
+                    existing_summary = f.read().strip()
+                
+                if existing_summary and len(existing_summary) > 50:  # 简单的内容验证
+                    logger.info(f"复用已有总结结果: {summary_file}")
+                    return existing_summary
+                else:
+                    logger.info(f"已有总结文件内容不合格，重新生成")
+            except Exception as e:
+                logger.warning(f"读取已有总结文件失败: {e}，重新生成")
+        
+        # 生成新的总结
+        logger.info("生成新的总结")
+        return self._generate_summary_from_structured_content(calibrated_text, video_metadata)
     
     def _generate_summary_from_structured_content(self, calibrated_text: str, video_metadata: Dict) -> str:
         """基于结构化内容生成总结"""
