@@ -288,28 +288,47 @@ class DialogRenderer:
     
     def _render_normal_text(self, text: str) -> str:
         """
-        渲染普通文本
-        
+        渲染普通文本，支持Markdown格式
+
         Args:
             text: 文本内容
-            
+
         Returns:
             str: HTML格式的文本
         """
         if not text:
             return ""
-        
-        # 简单的段落处理
+
+        # 尝试使用Markdown渲染
+        try:
+            from .markdown_renderer import render_markdown_to_html
+            html_result = render_markdown_to_html(text)
+            # 如果markdown渲染成功且包含了表格等元素，直接返回
+            if html_result and (
+                '<table>' in html_result or
+                '<h1>' in html_result or
+                '<h2>' in html_result or
+                '<ul>' in html_result or
+                '<ol>' in html_result or
+                '<blockquote>' in html_result or
+                '<pre>' in html_result
+            ):
+                logger.debug("使用Markdown渲染成功，发现结构化内容")
+                return html_result
+        except Exception as e:
+            logger.warning(f"Markdown渲染失败，降级到普通文本处理: {e}")
+
+        # 降级到简单的段落处理
         paragraphs = text.split('\n\n')
         html_parts = []
-        
+
         for paragraph in paragraphs:
             paragraph = paragraph.strip()
             if paragraph:
                 # 处理单个换行为<br>，双换行为段落分隔
                 paragraph_html = paragraph.replace('\n', '<br>')
                 html_parts.append(f'<p>{paragraph_html}</p>')
-        
+
         if html_parts:
             return '\n'.join(html_parts)
         else:
@@ -523,19 +542,38 @@ class DialogRenderer:
             raise
     
     def _render_calibrated_text_detection(self, cache_dir: str) -> str:
-        """专门用于校对文本的文本检测渲染"""
+        """专门用于校对文本的文本检测渲染，支持Markdown"""
         try:
             calibrated_file = os.path.join(cache_dir, 'llm_calibrated.txt')
-            
+
             with open(calibrated_file, 'r', encoding='utf-8') as f:
                 calibrated_text = f.read().strip()
-            
+
             if not calibrated_text:
                 raise ValueError("校对文本为空")
-            
-            # 使用文本检测渲染校对文本
+
+            # 首先尝试使用Markdown渲染（针对LLM生成的结构化内容）
+            try:
+                from .markdown_renderer import render_markdown_to_html
+                html_result = render_markdown_to_html(calibrated_text)
+                # 如果包含结构化内容，直接返回Markdown渲染结果
+                if html_result and (
+                    '<table>' in html_result or
+                    '<h1>' in html_result or
+                    '<h2>' in html_result or
+                    '<ul>' in html_result or
+                    '<ol>' in html_result or
+                    '<blockquote>' in html_result or
+                    '<pre>' in html_result
+                ):
+                    logger.debug("校对文本使用Markdown渲染成功，发现结构化内容")
+                    return html_result
+            except Exception as e:
+                logger.warning(f"校对文本Markdown渲染失败，降级到对话检测: {e}")
+
+            # 降级到原有的对话检测渲染
             return self.render_dialog_html(calibrated_text)
-            
+
         except Exception as e:
             logger.error(f"校对文本检测渲染失败 {cache_dir}: {e}")
             raise
