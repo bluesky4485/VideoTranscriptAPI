@@ -43,17 +43,17 @@ class YoutubeDownloader(BaseDownloader):
     def _extract_video_id(self, url):
         """
         从URL中提取视频ID
-        
+
         参数:
             url: 视频URL
-            
+
         返回:
             str: 视频ID
         """
         # 解析短链接
         if "youtu.be" in url:
             url = self.resolve_short_url(url)
-        
+
         # 从URL中提取视频ID
         if "youtube.com/watch" in url:
             # 形如 https://www.youtube.com/watch?v=VIDEO_ID
@@ -67,12 +67,19 @@ class YoutubeDownloader(BaseDownloader):
                 video_id = match.group(1)
                 logger.info(f"从YouTube Shorts URL中提取到视频ID: {video_id}")
                 return video_id
+        elif "youtube.com/live/" in url:
+            # 形如 https://www.youtube.com/live/VIDEO_ID
+            match = re.search(r'/live/([^?&/]+)', url)
+            if match:
+                video_id = match.group(1)
+                logger.info(f"从YouTube Live URL中提取到视频ID: {video_id}")
+                return video_id
         elif "youtu.be/" in url:
             # 形如 https://youtu.be/VIDEO_ID
             match = re.search(r'youtu\.be/([^?&]+)', url)
             if match:
                 return match.group(1)
-        
+
         logger.error(f"无法从URL中提取Youtube视频ID: {url}")
         raise ValueError(f"无法从URL中提取Youtube视频ID: {url}")
     
