@@ -16,11 +16,11 @@ import re
 import uuid
 import subprocess
 import argparse
-import logging
 from pathlib import Path
 from typing import Tuple, List, Optional, Dict, Any
 
 import websockets
+from loguru import logger
 
 # 添加项目根目录到系统路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -115,32 +115,16 @@ class CapsWriterClient:
         
         # 确保输出目录存在
         os.makedirs(self.output_dir, exist_ok=True)
-        
-        # 设置日志
-        self._setup_logger()
-    
-    def _setup_logger(self):
-        """设置日志记录器"""
-        self.logger = logging.getLogger("CapsWriterClient")
-        if not self.logger.handlers:
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-            )
-            handler.setFormatter(formatter)
-            self.logger.addHandler(handler)
-        
-        self.logger.setLevel(logging.INFO if Config.verbose else logging.WARNING)
-    
+
     def log(self, message: str, level: str = "info"):
         """记录日志"""
         if Config.verbose:
             if level == "info":
-                self.logger.info(message)
+                logger.info(message)
             elif level == "warning":
-                self.logger.warning(message)
+                logger.warning(message)
             elif level == "error":
-                self.logger.error(message)
+                logger.error(message)
             else:
                 print(message)
     
