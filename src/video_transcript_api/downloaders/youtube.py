@@ -488,7 +488,8 @@ class YoutubeDownloader(BaseDownloader):
                     'youtube': {
                         'player_client': ['tv', 'android', 'ios', 'web'],
                         'player_skip': [],
-                        'skip': []
+                        'skip': [],
+                        'player_js_version': ['actual']
                     }
                 }
             }
@@ -656,7 +657,8 @@ class YoutubeDownloader(BaseDownloader):
                     'youtube': {
                         'player_client': ['tv', 'android', 'ios', 'web'],
                         'player_skip': [],
-                        'skip': []
+                        'skip': [],
+                        'player_js_version': ['actual']
                     }
                 },
                 'retries': 10,

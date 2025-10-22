@@ -22,7 +22,7 @@ watchdog
 srt
 beautifulsoup4>=4.9.0
 youtube-transcript-api
-yt-dlp
+yt-dlp[default]
 markdown>=3.4.0
 pymdown-extensions>=10.0.0
 jinja2>=3.0.0
