@@ -173,7 +173,7 @@ class CapsWriterClient:
     
     async def _check_websocket(self) -> bool:
         """检查并建立WebSocket连接"""
-        if self.websocket and not self.websocket.closed:
+        if self.websocket and self.websocket.close_code is None:
             return True
         
         max_retries = 5
@@ -202,7 +202,7 @@ class CapsWriterClient:
     
     async def _close_websocket(self):
         """关闭WebSocket连接"""
-        if self.websocket and not self.websocket.closed:
+        if self.websocket and self.websocket.close_code is None:
             await self.websocket.close()
             self.websocket = None
             self.log("已关闭服务器连接", "warning")
