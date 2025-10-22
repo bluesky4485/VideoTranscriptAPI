@@ -2,6 +2,10 @@
 
 {% block title %}{{ title or "视频转录" }} - 视频转录查看器{% endblock %}
 
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/floating-toc.css">
+{% endblock %}
+
 {% block content %}
     <div class="section">
         <h2>📝 内容总结</h2>
@@ -27,5 +31,9 @@
         </div>
     </div>
     {% endif %}
-    
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/floating-toc.js"></script>
 {% endblock %}
