@@ -94,16 +94,17 @@ def _fix_list_spacing(text: str) -> str:
             continue
 
         # 检测当前行是否为列表项
-        # 匹配：0-3个空格 + (*, -, + 或数字.) + 至少一个空格
-        # 例如：'*   文本'、'-   文本'、'1.  文本'、'    *   嵌套列表'
-        list_match = re.match(r'^(\s{0,3})([\*\-\+]|\d+\.)\s+', line)
+        # 匹配：任意个空格 + (*, -, + 或数字.) + 至少一个空格
+        # 例如：'*   文本'、'-   文本'、'1.  文本'、'    *   嵌套列表'、'        -   三级列表'
+        list_match = re.match(r'^(\s*)([\*\-\+]|\d+\.)\s+', line)
 
         if list_match and i > 0:
             prev_line = lines[i-1]
             prev_line_stripped = prev_line.strip()
 
             # 检查前一行是否也是列表项或空行
-            prev_is_list = re.match(r'^(\s*)[\*\-\+\d]', prev_line_stripped)
+            # 必须匹配完整的列表项格式，避免将 **加粗** 误识别为列表
+            prev_is_list = re.match(r'^(\s*)([\*\-\+]|\d+\.)\s+', prev_line_stripped)
             prev_is_empty = not prev_line_stripped
             prev_is_heading = prev_line_stripped.startswith('#')
 
