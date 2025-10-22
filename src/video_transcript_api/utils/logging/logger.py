@@ -1,6 +1,7 @@
 import os
 import json
 import sys
+from pathlib import Path
 from loguru import logger
 
 # 全局变量，标记logger是否已经配置
@@ -12,11 +13,11 @@ def load_config():
     加载配置文件
     """
     # 获取项目根目录下的配置文件路径
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
-    config_path = os.path.join(project_root, "config", "config.json")
+    current_file = Path(__file__).resolve()
+    project_root = current_file.parents[4]
+    config_path = project_root / "config" / "config.json"
 
-    with open(config_path, "r", encoding="utf-8") as f:
+    with config_path.open("r", encoding="utf-8") as f:
         return json.load(f)
 
 # 创建日志目录

@@ -9,7 +9,7 @@ import time
 # 添加src目录到Python路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-from video_transcript_api.utils.wechat import send_long_text_wechat
+from video_transcript_api.utils.notifications import send_long_text_wechat
 
 def test_cache_mode_notification_order():
     """测试缓存模式下通知顺序"""
@@ -65,7 +65,7 @@ def test_cache_mode_notification_order():
     
     # 5. 发送完成通知
     print("5. 发送完成通知...")
-    from video_transcript_api.utils.wechat import WechatNotifier
+    from video_transcript_api.utils.notifications import WechatNotifier
     completion_message = f"✅ 【任务完成】{title}\n\n转录和AI处理已全部完成！\n\n🔗 查看完整结果：http://example.com/view/test-token"
     
     notifier = WechatNotifier(use_rate_limit=True)

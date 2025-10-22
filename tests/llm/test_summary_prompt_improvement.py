@@ -11,8 +11,8 @@ import json
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 sys.path.insert(0, project_root)
 
-from src.video_transcript_api.utils.llm_enhanced import EnhancedLLMProcessor
-from src.video_transcript_api.utils.logger import setup_logger
+from src.video_transcript_api.utils.llm import EnhancedLLMProcessor
+from src.video_transcript_api.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
 

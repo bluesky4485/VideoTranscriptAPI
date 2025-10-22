@@ -2,10 +2,11 @@ import os
 import sys
 
 # 添加项目根目录到系统路径
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+sys.path.insert(0, os.path.join(project_root, 'src'))
 
-from utils.llm import call_llm_api
-from utils import load_config
+from video_transcript_api.utils.llm import call_llm_api
+from video_transcript_api.utils.logging import load_config
 
 def main():
     if len(sys.argv) < 2:

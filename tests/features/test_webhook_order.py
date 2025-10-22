@@ -13,7 +13,7 @@ import os
 # 添加src目录到Python路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-from video_transcript_api.utils.wechat import send_long_text_wechat, WechatNotifier
+from video_transcript_api.utils.notifications import send_long_text_wechat, WechatNotifier
 
 
 def test_webhook_message_order():

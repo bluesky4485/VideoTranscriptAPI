@@ -6,6 +6,9 @@ import os
 import sys
 from datetime import datetime, timezone, timedelta
 
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, os.path.join(project_root, "src"))
+
 def test_timezone_functionality():
     """测试时区功能"""
     print("开始测试时区转换功能...")
@@ -15,11 +18,11 @@ def test_timezone_functionality():
     sys.path.insert(0, project_root)
     
     try:
-        from utils.timezone_helper import (
-            parse_timezone_offset, 
+        from video_transcript_api.utils.timeutil import (
+            parse_timezone_offset,
             get_configured_timezone,
             format_datetime_with_timezone,
-            format_datetime_for_display
+            format_datetime_for_display,
         )
         
         # 1. 测试时区解析
@@ -84,7 +87,7 @@ def test_timezone_functionality():
         print("\n步骤5: 测试不同时区配置...")
         
         # 临时修改配置测试
-        from utils import load_config
+        from video_transcript_api.utils.logging import load_config
         
         original_config = load_config()
         test_timezones_config = ["UTC+0", "UTC-5", "UTC+9", "UTC+05:30"]
@@ -95,10 +98,14 @@ def test_timezone_functionality():
             
             # 重新导入模块以获取新配置
             import importlib
-            import utils.timezone_helper
-            importlib.reload(utils.timezone_helper)
-            
-            from utils.timezone_helper import get_configured_timezone, format_datetime_for_display
+            import video_transcript_api.utils.timeutil.timezone_helper as timezone_helper_module
+
+            importlib.reload(timezone_helper_module)
+
+            from video_transcript_api.utils.timeutil import (
+                get_configured_timezone,
+                format_datetime_for_display,
+            )
             
             test_time = "2025-08-20 12:00:00"
             display_time = format_datetime_for_display(test_time)
@@ -128,9 +135,9 @@ def test_edge_cases():
     print("\n测试边界情况...")
     
     try:
-        from utils.timezone_helper import (
+        from video_transcript_api.utils.timeutil import (
             format_datetime_with_timezone,
-            format_datetime_for_display
+            format_datetime_for_display,
         )
         
         edge_cases = [

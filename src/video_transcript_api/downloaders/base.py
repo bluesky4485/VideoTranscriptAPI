@@ -5,7 +5,7 @@ import requests
 import time
 from abc import ABC, abstractmethod
 from urllib.parse import urlparse, parse_qs
-from ..utils import setup_logger, load_config, ensure_dir
+from ..utils.logging import setup_logger, load_config, ensure_dir
 
 # 创建日志记录器
 logger = setup_logger("downloaders")

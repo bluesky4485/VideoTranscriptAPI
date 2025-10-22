@@ -17,7 +17,7 @@ from pathlib import Path
 # 添加src目录到Python路径
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'src'))
 
-from video_transcript_api.utils.logger import setup_logger
+from video_transcript_api.utils.logging import setup_logger
 
 def get_project_root():
     """获取项目根目录"""

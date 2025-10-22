@@ -7,8 +7,8 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-from video_transcript_api.utils.dialog_renderer import DialogRenderer
-from video_transcript_api.utils.cache_analyzer import analyze_cache_capabilities
+from video_transcript_api.utils.rendering import DialogRenderer
+from video_transcript_api.utils.cache import analyze_cache_capabilities
 
 def main():
     print("=== 调试渲染策略选择 ===\n")

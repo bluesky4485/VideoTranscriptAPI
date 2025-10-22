@@ -24,7 +24,7 @@ from loguru import logger
 
 # 添加项目根目录到系统路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from ..utils import load_config
+from ..utils.logging import load_config
 
 
 class Config:

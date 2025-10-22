@@ -77,3 +77,4 @@ Thumbs.db
 docs/_build/
 debug
 data/debug
+logs

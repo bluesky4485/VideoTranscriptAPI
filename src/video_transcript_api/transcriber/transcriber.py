@@ -4,7 +4,7 @@ import json
 import shutil
 import time
 from pathlib import Path
-from ..utils import setup_logger, load_config, ensure_dir
+from ..utils.logging import setup_logger, load_config, ensure_dir
 
 # 导入精简版CapsWriter客户端
 from .capswriter_client import CapsWriterClient, Config as ClientConfig

@@ -4,10 +4,12 @@
 import asyncio
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from downloaders.youtube import YoutubeDownloader
-from utils.logger import setup_logger
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.join(project_root, 'src'))
+
+from video_transcript_api.downloaders.youtube import YoutubeDownloader
+from video_transcript_api.utils.logging import setup_logger
 
 logger = setup_logger("test_youtube")
 
@@ -39,7 +41,7 @@ async def test_youtube_subtitle():
         logger.info(f"字幕预览: {subtitle[:200]}...")
         
         # 测试 webhook 通知的 URL 清洗
-        from utils.wechat import WechatNotifier
+        from video_transcript_api.utils.notifications import WechatNotifier
         notifier = WechatNotifier()
         clean_url = notifier._clean_url(test_url)
         logger.info(f"清洗后的URL: {clean_url}")
@@ -69,7 +71,7 @@ async def test_youtube_subtitle():
 
 def test_url_cleaning():
     """测试 URL 清洗功能"""
-    from utils.wechat import WechatNotifier
+    from video_transcript_api.utils.notifications import WechatNotifier
     notifier = WechatNotifier()
     
     test_cases = [

@@ -3,9 +3,11 @@
 
 import os
 import sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils import setup_logger
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(project_root, "src"))
+
+from video_transcript_api.utils.logging import setup_logger
 
 logger = setup_logger("test_cache_patterns")
 

@@ -5,7 +5,7 @@
 import os
 import threading
 from typing import Dict, Any, Optional, List
-from .logger import setup_logger
+from ..logging import setup_logger
 from .llm import call_llm_api
 from .llm_segmented import SegmentedLLMProcessor
 from .text_segmentation import TextSegmentationProcessor
@@ -141,8 +141,6 @@ class EnhancedLLMProcessor:
     def _build_cache_dir_from_task(self, llm_task: Dict[str, Any]) -> str:
         """从任务信息构建缓存目录路径"""
         import os
-        from .cache_manager import CacheManager
-        
         # 获取配置中的缓存目录
         cache_base_dir = self.config.get("storage", {}).get("cache_dir", "./data/cache")
         

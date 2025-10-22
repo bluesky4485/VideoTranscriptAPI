@@ -2,9 +2,9 @@ import re
 import json
 import os
 from typing import List, Dict, Tuple, Optional
-from .logger import setup_logger
-from .cache_analyzer import analyze_cache_capabilities, CacheCapabilities
-from .speaker_mapping import infer_speaker_mapping_from_cache
+from ..logging import setup_logger
+from ..cache.cache_analyzer import analyze_cache_capabilities, CacheCapabilities
+from ..llm.speaker_mapping import infer_speaker_mapping_from_cache
 
 logger = setup_logger("dialog_renderer")
 
@@ -820,7 +820,6 @@ def render_calibrated_content_smart(cache_dir: str) -> Optional[str]:
         renderer = DialogRenderer()
         
         # 分析缓存能力
-        from .cache_analyzer import analyze_cache_capabilities
         capabilities = analyze_cache_capabilities(cache_dir)
         
         # 根据能力选择渲染策略，但总是基于校对文本

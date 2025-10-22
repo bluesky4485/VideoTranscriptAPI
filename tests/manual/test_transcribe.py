@@ -13,10 +13,12 @@ import time
 from pathlib import Path
 
 # 添加项目根目录到系统路径
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+sys.path.insert(0, os.path.join(project_root, 'src'))
 
-from transcriber import Transcriber
-from utils import setup_logger, load_config, wechat_notify
+from video_transcript_api.transcriber import Transcriber
+from video_transcript_api.utils.logging import setup_logger, load_config
+from video_transcript_api.utils.notifications import wechat_notify
 
 # 创建日志记录器
 logger = setup_logger("test_transcribe")

@@ -3,7 +3,7 @@ import mimetypes
 import requests
 from urllib.parse import urlparse, unquote
 from .base import BaseDownloader
-from ..utils import setup_logger
+from ..utils.logging import setup_logger
 import datetime
 
 # 创建日志记录器
@@ -184,7 +184,7 @@ class GenericDownloader(BaseDownloader):
         # 尝试导入企微通知器
         try:
             # 使用包内绝对导入，避免重复加载模块导致全局实例被初始化两次
-            from ..utils.wechat import WechatNotifier
+            from ..utils.notifications import WechatNotifier
             wechat_notifier = WechatNotifier()
         except:
             wechat_notifier = None

@@ -4,7 +4,7 @@ from .xiaohongshu import XiaohongshuDownloader
 from .youtube import YoutubeDownloader
 from .xiaoyuzhou import XiaoyuzhouDownloader
 from .generic import GenericDownloader
-from ..utils import setup_logger
+from ..utils.logging import setup_logger
 
 # 创建日志记录器
 logger = setup_logger("downloader_factory")

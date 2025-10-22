@@ -53,7 +53,7 @@ def main():
             print(repr(context))
 
     # Test markdown rendering on summary
-    from video_transcript_api.utils.markdown_renderer import render_markdown_to_html
+    from video_transcript_api.utils.rendering import render_markdown_to_html
 
     try:
         html_result = render_markdown_to_html(content)

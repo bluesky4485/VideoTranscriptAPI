@@ -3,7 +3,7 @@ import requests
 import datetime
 import re
 from wecom_notifier import WeComNotifier
-from .logger import setup_logger, load_config
+from ..logging import setup_logger, load_config
 
 # 创建日志记录器
 logger = setup_logger("wechat_notifier")
@@ -464,7 +464,7 @@ def send_view_link_wechat(title, view_token, webhook=None, original_url=None):
         webhook: 自定义企业微信webhook地址
         original_url: 原始媒体URL（可选）
     """
-    from .markdown_renderer import get_base_url
+    from ..rendering import get_base_url
 
     try:
         notifier = WechatNotifier(webhook)
@@ -497,3 +497,39 @@ def send_view_link_wechat(title, view_token, webhook=None, original_url=None):
     except Exception as e:
         logger.exception(f"发送查看链接异常: {e}")
         return False 
+
+
+def send_markdown_wechat(content, webhook=None, skip_risk_control=False):
+    """
+    兼容保留：发送 Markdown 消息。
+
+    Args:
+        content: Markdown 正文
+        webhook: 可选自定义 webhook
+        skip_risk_control: 是否跳过风控处理
+    """
+    notifier = WechatNotifier(webhook)
+    return notifier.send_markdown_v2(content, skip_risk_control=skip_risk_control)
+
+
+def send_wechat_notification(
+    url,
+    status,
+    error=None,
+    title=None,
+    author=None,
+    transcript=None,
+    webhook=None,
+):
+    """
+    兼容保留：发送任务状态通知。
+    """
+    notifier = WechatNotifier(webhook)
+    return notifier.notify_task_status(
+        url=url,
+        status=status,
+        error=error,
+        title=title,
+        author=author,
+        transcript=transcript,
+    )

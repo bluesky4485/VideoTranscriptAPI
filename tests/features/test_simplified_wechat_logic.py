@@ -5,7 +5,11 @@
 """
 import os
 import sys
-from utils import load_config
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.insert(0, os.path.join(project_root, 'src'))
+
+from video_transcript_api.utils.logging import load_config
 
 def test_simplified_wechat_logic():
     """测试简化后的企微通知逻辑"""

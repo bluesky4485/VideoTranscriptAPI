@@ -14,13 +14,13 @@ import os
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(project_root, "src"))
 
-from video_transcript_api.utils.wechat import (
+from video_transcript_api.utils.notifications.wechat import (
     init_global_notifier,
     shutdown_global_notifier,
     _get_global_notifier,
     WechatNotifier,
 )
-from video_transcript_api.utils.logger import setup_logger
+from video_transcript_api.utils.logging import setup_logger
 
 # Setup logger
 logger = setup_logger("test_singleton_fix")

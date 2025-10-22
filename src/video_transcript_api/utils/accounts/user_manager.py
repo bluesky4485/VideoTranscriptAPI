@@ -7,8 +7,9 @@
 import os
 import json
 import threading
+from pathlib import Path
 from typing import Optional, Dict, Any, List
-from .logger import setup_logger
+from ..logging import setup_logger
 
 logger = setup_logger("user_manager")
 
@@ -26,10 +27,10 @@ class UserManager:
         """
         if users_config_path is None:
             # 默认用户配置文件路径
-            current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-            users_config_path = os.path.join(current_dir, "config", "users.json")
+            project_root = Path(__file__).resolve().parents[4]
+            users_config_path = project_root / "config" / "users.json"
         
-        self.users_config_path = users_config_path
+        self.users_config_path = str(users_config_path)
         self.fallback_config = fallback_config or {}
         self._users_data = {}
         self._lock = threading.Lock()

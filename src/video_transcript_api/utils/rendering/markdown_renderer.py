@@ -1,7 +1,7 @@
 import re
 import markdown
 import pymdownx.emoji
-from .logger import setup_logger
+from ..logging import setup_logger
 
 logger = setup_logger("markdown_renderer")
 
@@ -188,7 +188,7 @@ def render_markdown_to_html(markdown_text: str) -> str:
 
 def get_base_url() -> str:
     """获取外部访问基础URL"""
-    from utils import load_config
+    from ..logging import load_config
     
     config = load_config()
     base_url = config.get("web", {}).get("base_url", "http://localhost:8000")

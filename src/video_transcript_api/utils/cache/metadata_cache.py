@@ -1,7 +1,7 @@
 import os
 import json
 import datetime
-from . import setup_logger, load_config
+from ..logging import setup_logger, load_config
 
 # 创建日志记录器
 logger = setup_logger("metadata_cache")

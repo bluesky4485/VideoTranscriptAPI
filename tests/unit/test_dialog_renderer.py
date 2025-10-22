@@ -5,7 +5,7 @@ import os
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.insert(0, project_root)
 
-from src.video_transcript_api.utils.dialog_renderer import DialogRenderer, render_transcript_content
+from src.video_transcript_api.utils.rendering import DialogRenderer, render_transcript_content
 
 def test_dialog_detection():
     """测试对话检测功能"""

@@ -605,7 +605,7 @@ WEBHOOK_URL = os.getenv("WECOM_WEBHOOK_URL")
 - 在包内代码中，务必使用包内绝对或相对导入，避免同一模块以不同名称被加载两次，从而导致单例失效。
 - 错误示例：`from utils.wechat import send_long_text_wechat`
 - 正确示例：
-  - 包内绝对导入：`from ..utils.wechat import send_long_text_wechat`
+  - 包内绝对导入：`from ..utils.notifications import send_long_text_wechat`
   - 同包相对导入：`from .wechat import WechatNotifier`
  这样可以确保 `wechat.py` 只加载一次，其全局 `WeComNotifier` 实例不会被重复初始化。
 

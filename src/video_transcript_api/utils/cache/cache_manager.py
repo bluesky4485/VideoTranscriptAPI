@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 from contextlib import contextmanager
 import threading
-from .logger import setup_logger
+from ..logging import setup_logger
 
 logger = setup_logger("cache_manager")
 

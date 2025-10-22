@@ -21,7 +21,7 @@ def main():
         original_content = f.read()
 
     # Test the fix function directly
-    from video_transcript_api.utils.markdown_renderer import _fix_indented_tables
+    from video_transcript_api.utils.rendering.markdown_renderer import _fix_indented_tables
 
     print("Testing fix function...")
     fixed_content = _fix_indented_tables(original_content)

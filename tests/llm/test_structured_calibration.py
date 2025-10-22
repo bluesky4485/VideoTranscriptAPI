@@ -10,9 +10,8 @@ from unittest.mock import patch, MagicMock
 # 添加项目根目录到Python路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-from video_transcript_api.utils.structured_calibrator import StructuredCalibrator
-from video_transcript_api.utils.llm_enhanced import EnhancedLLMProcessor
-from video_transcript_api.utils.logger import load_config
+from video_transcript_api.utils.llm import StructuredCalibrator, EnhancedLLMProcessor
+from video_transcript_api.utils.logging import load_config
 
 
 class TestStructuredCalibration(unittest.TestCase):

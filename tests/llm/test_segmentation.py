@@ -7,10 +7,16 @@ import os
 import sys
 import json
 from datetime import datetime
-from utils import load_config
-from utils.text_segmentation import TextSegmentationProcessor
-from utils.llm_segmented import SegmentedLLMProcessor
-from utils.llm_enhanced import EnhancedLLMProcessor
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, os.path.join(project_root, "src"))
+
+from video_transcript_api.utils.logging import load_config
+from video_transcript_api.utils.llm import (
+    TextSegmentationProcessor,
+    SegmentedLLMProcessor,
+    EnhancedLLMProcessor,
+)
 
 def save_calibrated_result(result_text, filename_prefix, description=""):
     """保存校对结果到output文件夹"""

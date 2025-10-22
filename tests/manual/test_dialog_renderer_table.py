@@ -7,7 +7,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-from video_transcript_api.utils.dialog_renderer import DialogRenderer
+from video_transcript_api.utils.rendering import DialogRenderer
 
 def test_table_in_dialog_renderer():
     """测试对话渲染器的表格支持"""

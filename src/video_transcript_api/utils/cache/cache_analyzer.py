@@ -2,7 +2,7 @@ import os
 import json
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
-from .logger import setup_logger
+from ..logging import setup_logger
 
 logger = setup_logger("cache_analyzer")
 

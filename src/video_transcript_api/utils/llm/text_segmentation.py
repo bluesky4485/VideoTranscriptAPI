@@ -6,7 +6,7 @@ import json
 import re
 import os
 from typing import List, Dict, Any, Tuple, Optional
-from .logger import setup_logger
+from ..logging import setup_logger
 from .llm import call_llm_api
 
 logger = setup_logger(__name__)

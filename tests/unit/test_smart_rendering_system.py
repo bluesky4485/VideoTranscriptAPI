@@ -13,9 +13,9 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.video_transcript_api.utils.speaker_mapping import SpeakerMappingInference, infer_speaker_mapping_from_cache
-from src.video_transcript_api.utils.cache_analyzer import CacheCapabilityAnalyzer, analyze_cache_capabilities  
-from src.video_transcript_api.utils.dialog_renderer import render_transcript_content_smart
+from src.video_transcript_api.utils.llm import SpeakerMappingInference, infer_speaker_mapping_from_cache
+from src.video_transcript_api.utils.cache import CacheCapabilityAnalyzer, analyze_cache_capabilities
+from src.video_transcript_api.utils.rendering import render_transcript_content_smart
 
 def create_test_cache_directory():
     """创建测试用的缓存目录结构"""

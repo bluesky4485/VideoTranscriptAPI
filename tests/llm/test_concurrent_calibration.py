@@ -4,9 +4,14 @@
 测试并发校对功能
 """
 import os
+import sys
 import time
-from utils import load_config
-from utils.llm_segmented import SegmentedLLMProcessor
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.insert(0, os.path.join(project_root, 'src'))
+
+from video_transcript_api.utils.logging import load_config
+from video_transcript_api.utils.llm import SegmentedLLMProcessor
 
 def test_concurrent_calibration():
     """测试并发校对功能"""

@@ -44,13 +44,42 @@ video_transcript_api/
 │   │   │   ├── transcriber.py    # 转录器实现（基于CapsWriter-Offline）
 │   │   │   ├── capswriter_client.py  # CapsWriter精简客户端
 │   │   │   └── funasr_client.py  # FunASR说话人识别客户端
-│   │   └── utils/                # 工具模块
+│   │   └── utils/                # 工具模块（按子领域拆分）
 │   │       ├── __init__.py
-│   │       ├── logger.py         # 日志工具
-│   │       ├── wechat.py         # 企业微信通知
-│   │       ├── cache_manager.py  # 智能缓存管理器
-│   │       ├── llm_enhanced.py   # 增强LLM处理器
-│   │       └── ...               # 其他工具模块
+│   │       ├── logging/          # 日志与审计
+│   │       │   ├── __init__.py
+│   │       │   ├── logger.py
+│   │       │   └── audit_logger.py
+│   │       ├── cache/            # 缓存管理
+│   │       │   ├── __init__.py
+│   │       │   ├── cache_manager.py
+│   │       │   ├── cache_analyzer.py
+│   │       │   └── metadata_cache.py
+│   │       ├── llm/              # LLM 处理工具
+│   │       │   ├── __init__.py
+│   │       │   ├── llm.py
+│   │       │   ├── llm_enhanced.py
+│   │       │   ├── llm_segmented.py
+│   │       │   ├── structured_calibrator.py
+│   │       │   ├── text_segmentation.py
+│   │       │   └── speaker_mapping.py
+│   │       ├── rendering/        # Markdown/对话渲染
+│   │       │   ├── __init__.py
+│   │       │   ├── dialog_renderer.py
+│   │       │   └── markdown_renderer.py
+│   │       ├── notifications/    # 企业微信通知
+│   │       │   ├── __init__.py
+│   │       │   └── wechat.py
+│   │       ├── accounts/         # 多用户管理
+│   │       │   ├── __init__.py
+│   │       │   └── user_manager.py
+│   │       ├── timeutil/         # 时区与时间工具
+│   │       │   ├── __init__.py
+│   │       │   └── timezone_helper.py
+│   │       └── risk_control/     # 文本风控
+│   │           ├── __init__.py
+│   │           ├── sensitive_words_manager.py
+│   │           └── text_sanitizer.py
 │   └── web/                      # Web模板资源
 │       └── templates/            # HTML模板
 ├── tests/                        # 测试模块
@@ -221,8 +250,8 @@ python main.py --start
 
 ### 开发提示（企业微信通知）
 - 项目使用外部包 `wecom-notifier` 的限流与分段能力，要求全局仅一个 `WeComNotifier` 实例。
-- 应用已在启动时初始化全局实例。包内代码使用通知功能时，请采用包内绝对/相对导入，避免同一模块以不同名称被加载两次导致单例失效：
-  - 正确：`from video_transcript_api.utils.wechat import send_long_text_wechat` 或 `from ..utils.wechat import WechatNotifier`
+- 应用已在启动时初始化全局实例。包内代码使用通知功能时，请依赖新的子包导入路径，避免同一模块以不同名称被加载两次导致单例失效：
+  - 正确：`from video_transcript_api.utils.notifications import send_long_text_wechat` 或 `from ..utils.notifications import WechatNotifier`
   - 避免：`from utils.wechat import ...`
 
 ### API使用示例

@@ -9,7 +9,7 @@
 
 import re
 from typing import Set, List, Tuple, Dict
-from ..logger import setup_logger
+from ..logging import setup_logger
 
 logger = setup_logger("text_sanitizer")
 

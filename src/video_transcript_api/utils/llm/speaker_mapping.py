@@ -1,7 +1,7 @@
 import re
 import json
 from typing import List, Dict, Tuple, Optional
-from .logger import setup_logger
+from ..logging import setup_logger
 
 logger = setup_logger("speaker_mapping")
 

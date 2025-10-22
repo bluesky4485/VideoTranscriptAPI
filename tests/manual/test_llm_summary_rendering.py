@@ -12,7 +12,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
-from video_transcript_api.utils.markdown_renderer import render_markdown_to_html
+from video_transcript_api.utils.rendering import render_markdown_to_html
 
 
 def test_llm_summary_file():

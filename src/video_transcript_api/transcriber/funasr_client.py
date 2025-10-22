@@ -18,7 +18,7 @@ from pathlib import Path
 from datetime import datetime
 from loguru import logger
 
-from ..utils import load_config
+from ..utils.logging import load_config
 
 
 class FunASRSpeakerClient:

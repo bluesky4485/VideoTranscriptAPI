@@ -5,7 +5,7 @@
 import json
 import os
 from typing import List, Dict, Any, Optional, Tuple
-from .logger import setup_logger
+from ..logging import setup_logger
 from .llm import call_llm_api
 from .text_segmentation import TextSegmentationProcessor
 

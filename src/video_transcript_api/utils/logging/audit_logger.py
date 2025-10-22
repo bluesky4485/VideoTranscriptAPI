@@ -9,6 +9,7 @@ import sqlite3
 import threading
 import json
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, Dict, Any, List
 from .logger import setup_logger
 
@@ -27,12 +28,12 @@ class AuditLogger:
         """
         if db_path is None:
             # 默认数据库路径
-            current_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-            data_dir = os.path.join(current_dir, "data")
-            os.makedirs(data_dir, exist_ok=True)
-            db_path = os.path.join(data_dir, "audit.db")
+            project_root = Path(__file__).resolve().parents[4]
+            data_dir = project_root / "data"
+            data_dir.mkdir(parents=True, exist_ok=True)
+            db_path = data_dir / "audit.db"
         
-        self.db_path = db_path
+        self.db_path = str(db_path)
         self._lock = threading.Lock()
         self._init_database()
         logger.info(f"审计日志记录器初始化完成，数据库路径: {self.db_path}")
@@ -41,7 +42,7 @@ class AuditLogger:
         """初始化数据库表结构"""
         with self._lock:
             try:
-                conn = sqlite3.connect(self.db_path)
+                conn = sqlite3.connect(str(self.db_path))
                 cursor = conn.cursor()
                 
                 # 创建API审计日志表
@@ -119,7 +120,7 @@ class AuditLogger:
         """
         try:
             with self._lock:
-                conn = sqlite3.connect(self.db_path)
+                conn = sqlite3.connect(str(self.db_path))
                 cursor = conn.cursor()
                 
                 # 脱敏处理API密钥

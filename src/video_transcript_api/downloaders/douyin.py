@@ -4,7 +4,8 @@ import json
 import time
 import datetime
 from .base import BaseDownloader
-from ..utils import setup_logger, create_debug_dir
+from ..utils.logging import setup_logger
+from ..utils import create_debug_dir
 
 # 创建日志记录器
 logger = setup_logger("douyin_downloader")

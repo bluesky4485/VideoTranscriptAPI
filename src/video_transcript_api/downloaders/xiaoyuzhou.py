@@ -5,7 +5,7 @@ import time
 import requests
 from bs4 import BeautifulSoup
 from .base import BaseDownloader
-from ..utils import setup_logger
+from ..utils.logging import setup_logger
 
 # 创建日志记录器
 logger = setup_logger("xiaoyuzhou_downloader")

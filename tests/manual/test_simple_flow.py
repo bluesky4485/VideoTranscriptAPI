@@ -7,7 +7,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-from video_transcript_api.utils.dialog_renderer import DialogRenderer, render_calibrated_content_smart
+from video_transcript_api.utils.rendering import DialogRenderer, render_calibrated_content_smart
 
 def main():
     print("=== 测试表格渲染问题 ===\n")

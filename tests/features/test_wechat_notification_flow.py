@@ -13,12 +13,12 @@ import time
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
 
-from src.video_transcript_api.utils.wechat import (
+from src.video_transcript_api.utils.notifications import (
     WechatNotifier,
     send_long_text_wechat,
-    send_view_link_wechat
+    send_view_link_wechat,
 )
-from src.video_transcript_api.utils.logger import load_config
+from src.video_transcript_api.utils.logging import load_config
 from src.video_transcript_api.utils.risk_control import init_risk_control, is_enabled
 
 
@@ -186,7 +186,7 @@ def test_notification_flow():
     print("\n[Notification 7/8] Task Completion with View Link")
     print("-" * 80)
     try:
-        from src.video_transcript_api.utils.markdown_renderer import get_base_url
+        from src.video_transcript_api.utils.rendering import get_base_url
 
         base_url = get_base_url()
         view_url = f"{base_url}/view/{test_view_token}"

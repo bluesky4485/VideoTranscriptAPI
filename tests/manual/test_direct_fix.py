@@ -7,7 +7,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-from video_transcript_api.utils.dialog_renderer import DialogRenderer
+from video_transcript_api.utils.rendering import DialogRenderer
 
 def main():
     print("=== 直接测试修复的函数 ===\n")
@@ -64,7 +64,7 @@ def main():
         with open(calibrated_file, 'r', encoding='utf-8') as f:
             content = f.read()
 
-        from video_transcript_api.utils.markdown_renderer import render_markdown_to_html
+        from video_transcript_api.utils.rendering import render_markdown_to_html
 
         try:
             markdown_result = render_markdown_to_html(content)

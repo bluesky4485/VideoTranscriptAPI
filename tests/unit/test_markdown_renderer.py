@@ -15,7 +15,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root / "src"))
 
-from video_transcript_api.utils.markdown_renderer import (
+from video_transcript_api.utils.rendering.markdown_renderer import (
     _fix_list_spacing,
     _fix_indented_tables,
     render_markdown_to_html

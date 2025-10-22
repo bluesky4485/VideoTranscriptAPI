@@ -15,14 +15,19 @@ from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, Dict, Any
 
-from ..utils import setup_logger, load_config, WechatNotifier, MetadataCache, CacheManager
-from ..utils.wechat import init_global_notifier, shutdown_global_notifier
-from ..utils.user_manager import get_user_manager
-from ..utils.audit_logger import get_audit_logger
-from ..utils.markdown_renderer import render_markdown_to_html, get_base_url
-from ..utils.dialog_renderer import render_transcript_content, render_transcript_content_smart, render_calibrated_content_smart
-from ..utils.timezone_helper import format_datetime_for_display
-from ..utils.llm_enhanced import EnhancedLLMProcessor
+from ..utils.logging import setup_logger, load_config, get_audit_logger
+from ..utils.notifications import WechatNotifier, init_global_notifier, shutdown_global_notifier
+from ..utils.cache import MetadataCache, CacheManager, should_upgrade_cache
+from ..utils.accounts import get_user_manager
+from ..utils.rendering import (
+    render_markdown_to_html,
+    get_base_url,
+    render_transcript_content,
+    render_transcript_content_smart,
+    render_calibrated_content_smart,
+)
+from ..utils.timeutil import format_datetime_for_display
+from ..utils.llm import EnhancedLLMProcessor
 from ..downloaders import create_downloader
 from ..transcriber import Transcriber, FunASRSpeakerClient
 
@@ -346,7 +351,7 @@ def process_transcription(task_id, url, use_speaker_recognition=False, wechat_we
                 
                 # 直接发送缓存的 LLM 结果（仅发送总结文本）
                 # 使用包内绝对导入，避免重复加载模块导致全局实例被初始化两次
-                from ..utils.wechat import send_long_text_wechat
+                from ..utils.notifications import send_long_text_wechat
 
                 logger.info("缓存模式 - 发送总结文本")
                 # 只发送总结文本（确保使用限流）
@@ -368,8 +373,8 @@ def process_transcription(task_id, url, use_speaker_recognition=False, wechat_we
                 task_info = cache_manager.get_task_by_id(task_id)
                 if task_info and task_info.get('view_token'):
                     # 使用包内绝对导入，避免重复加载模块导致全局实例被初始化两次
-                    from ..utils.wechat import send_view_link_wechat
-                    from ..utils.markdown_renderer import get_base_url
+                    from ..utils.notifications import send_view_link_wechat
+                    from ..utils.rendering import get_base_url
                     
                     base_url = get_base_url()
                     view_url = f"{base_url}/view/{task_info['view_token']}"
@@ -787,7 +792,7 @@ def process_llm_queue():
                 try:
                     # 使用增强LLM处理器进行校对和总结（支持自动分段）
                     # 使用包内绝对导入，避免重复加载模块导致全局实例被初始化两次
-                    from ..utils.wechat import send_long_text_wechat
+                    from ..utils.notifications import send_long_text_wechat
                     from ..utils.llm import call_llm_api
                     
                     # 如果是通用下载器且没有标题，先生成标题
@@ -874,7 +879,7 @@ def process_llm_queue():
                     task_info = cache_manager.get_task_by_id(task_id)
                     if task_info and task_info.get('view_token'):
                         # 使用包内绝对导入，避免重复加载模块
-                        from ..utils.markdown_renderer import get_base_url
+                        from ..utils.rendering import get_base_url
                         
                         base_url = get_base_url()
                         view_url = f"{base_url}/view/{task_info['view_token']}"
@@ -1048,7 +1053,7 @@ async def transcribe_video(
             
             # 立即发送企微通知，包含查看链接
             try:
-                from ..utils.wechat import send_view_link_wechat
+                from ..utils.notifications import send_view_link_wechat
                 
                 # 尝试从URL获取简单的标题信息（不进行复杂解析）
                 title = "转录任务已创建"
@@ -1368,8 +1373,7 @@ def _trigger_cache_upgrade_if_needed(cache_dir: str, view_data: dict):
     """
     try:
         logger.info(f"进入缓存升级检查: {cache_dir}")
-        from ..utils.cache_analyzer import should_upgrade_cache
-        from ..utils.llm_enhanced import EnhancedLLMProcessor
+        from ..utils.llm import EnhancedLLMProcessor
         import threading
         import json
         

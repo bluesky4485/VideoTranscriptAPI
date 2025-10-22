@@ -18,8 +18,8 @@ from video_transcript_api.utils.webhook_rate_limiter import (
     get_rate_limiter_stats,
     get_webhook_status
 )
-from video_transcript_api.utils.wechat import WechatNotifier
-from video_transcript_api.utils.logger import setup_logger
+from video_transcript_api.utils.notifications import WechatNotifier
+from video_transcript_api.utils.logging import setup_logger
 
 logger = setup_logger("webhook_test")
 

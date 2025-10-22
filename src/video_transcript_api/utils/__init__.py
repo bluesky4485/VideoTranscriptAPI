@@ -1,42 +1,25 @@
-from .logger import setup_logger, load_config, ensure_dir, logger
-from .wechat import WechatNotifier, wechat_notify
-from .metadata_cache import MetadataCache
-from .cache_manager import CacheManager
-from .user_manager import UserManager, get_user_manager
-from .audit_logger import AuditLogger, get_audit_logger
+"""Utility subpackages for video_transcript_api.
+
+This module exposes only the minimal helpers that remain widely used
+across the codebase. Most features now live in dedicated subpackages
+under ``video_transcript_api.utils``.
+"""
+
 import os
+from .logging import setup_logger, load_config, ensure_dir
 
-def create_debug_dir():
-    """
-    创建调试日志目录
 
-    返回:
-        str: 调试日志目录路径
-    """
-    # 创建logs目录
-    logs_dir = "logs"
+def create_debug_dir(base_dir: str = "logs") -> str:
+    """Ensure the debug log directory exists and return its path."""
+    logs_dir = base_dir
     if not os.path.exists(logs_dir):
         os.makedirs(logs_dir)
 
-    # 创建调试子目录
     debug_dir = os.path.join(logs_dir, "debug")
     if not os.path.exists(debug_dir):
         os.makedirs(debug_dir)
 
     return debug_dir
 
-__all__ = [
-    "setup_logger",
-    "logger",
-    "load_config",
-    "ensure_dir",
-    "WechatNotifier",
-    "wechat_notify",
-    "create_debug_dir",
-    "MetadataCache",
-    "CacheManager",
-    "UserManager",
-    "get_user_manager",
-    "AuditLogger",
-    "get_audit_logger"
-] 
+
+__all__ = ["setup_logger", "load_config", "ensure_dir", "create_debug_dir"]

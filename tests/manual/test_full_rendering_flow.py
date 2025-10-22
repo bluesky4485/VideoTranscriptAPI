@@ -7,7 +7,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-from video_transcript_api.utils.dialog_renderer import DialogRenderer, render_calibrated_content_smart
+from video_transcript_api.utils.rendering import DialogRenderer, render_calibrated_content_smart
 
 def test_real_cache_rendering():
     """测试真实缓存目录的渲染"""

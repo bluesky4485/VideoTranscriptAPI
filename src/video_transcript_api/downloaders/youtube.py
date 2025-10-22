@@ -11,7 +11,8 @@ from pathlib import Path
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled, VideoUnavailable, IpBlocked, NoTranscriptFound
 from .base import BaseDownloader
-from ..utils import setup_logger, create_debug_dir
+from ..utils.logging import setup_logger
+from ..utils import create_debug_dir
 
 # 创建日志记录器
 logger = setup_logger("youtube_downloader")

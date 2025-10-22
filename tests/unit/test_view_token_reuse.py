@@ -9,9 +9,11 @@ View Token复用功能测试
 
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from utils.cache_manager import CacheManager
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.join(project_root, "src"))
+
+from video_transcript_api.utils.cache import CacheManager
 
 def test_view_token_reuse():
     """测试view_token复用功能"""

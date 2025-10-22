@@ -9,7 +9,7 @@ import argparse
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 # 在导入其他模块之前初始化日志系统
-from video_transcript_api.utils import setup_logger
+from video_transcript_api.utils.logging import setup_logger
 setup_logger()
 
 from video_transcript_api.api.server import start_server

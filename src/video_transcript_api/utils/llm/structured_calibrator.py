@@ -9,7 +9,7 @@ from typing import Dict, List, Any, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor
 import concurrent.futures
 
-from .logger import setup_logger
+from ..logging import setup_logger
 from .llm import call_llm_api
 
 logger = setup_logger(__name__)

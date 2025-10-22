@@ -8,6 +8,6 @@ __author__ = "视频转录API团队"
 
 # 导出主要组件
 from .api.server import app
-from .utils.logger import setup_logger
+from .utils.logging import setup_logger
 
 __all__ = ['app', 'setup_logger']

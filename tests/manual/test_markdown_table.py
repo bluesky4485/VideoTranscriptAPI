@@ -7,7 +7,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-from video_transcript_api.utils.markdown_renderer import render_markdown_to_html
+from video_transcript_api.utils.rendering import render_markdown_to_html
 
 def test_table_rendering():
     """测试表格渲染"""

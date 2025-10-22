@@ -5,6 +5,9 @@
 import os
 import sys
 
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, os.path.join(project_root, "src"))
+
 def test_core_features():
     """测试核心功能"""
     print("开始测试Web查看核心功能...")
@@ -13,7 +16,7 @@ def test_core_features():
         # 1. 测试数据库初始化和任务创建
         print("\n步骤1: 测试数据库初始化和任务创建...")
         
-        from utils.cache_manager import CacheManager
+        from video_transcript_api.utils.cache import CacheManager
         cache_manager = CacheManager("./test_cache")
         
         # 创建测试任务
@@ -58,7 +61,7 @@ def test_core_features():
         # 4. 测试Markdown渲染
         print("\n步骤4: 测试Markdown渲染...")
         
-        from utils.markdown_renderer import render_markdown_to_html
+        from video_transcript_api.utils.rendering import render_markdown_to_html
         
         test_markdown = """
 # 测试标题
@@ -111,7 +114,7 @@ def test():
         # 5. 测试配置文件中的基础URL
         print("\n步骤5: 测试基础URL配置...")
         
-        from utils.markdown_renderer import get_base_url
+        from video_transcript_api.utils.rendering import get_base_url
         base_url = get_base_url()
         
         if base_url:
@@ -135,7 +138,7 @@ def test():
         # 7. 测试企业微信链接生成
         print("\n步骤7: 测试企业微信链接生成...")
         
-        from utils.wechat import send_view_link_wechat
+        from video_transcript_api.utils.notifications import send_view_link_wechat
         
         # 不实际发送，只测试链接生成
         try:

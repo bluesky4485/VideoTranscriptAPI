@@ -10,11 +10,11 @@ import sys
 import requests
 import json
 
-# 添加项目根目录到Python路径
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.insert(0, os.path.join(project_root, 'src'))
 
-from downloaders import create_downloader
-from utils import load_config, setup_logger
+from video_transcript_api.downloaders import create_downloader
+from video_transcript_api.utils.logging import load_config, setup_logger
 
 # 创建日志记录器
 logger = setup_logger("test_generic_url")

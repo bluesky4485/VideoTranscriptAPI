@@ -6,10 +6,11 @@ import os
 import sys
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(project_root, "src"))
 
-from utils.cache_manager import CacheManager
-from utils import setup_logger
+from video_transcript_api.utils.cache import CacheManager
+from video_transcript_api.utils.logging import setup_logger
 
 logger = setup_logger("test_llm_cache")
 
