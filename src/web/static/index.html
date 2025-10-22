@@ -63,9 +63,9 @@
                                 🔐 API访问令牌 (Bearer Token) <span class="required-mark">*</span>
                             </label>
                             <div class="input-group">
-                                <input 
-                                    type="password" 
-                                    id="bearer-token" 
+                                <input
+                                    type="password"
+                                    id="bearer-token"
                                     class="form-input"
                                     placeholder="请输入API访问令牌"
                                     required
@@ -74,6 +74,25 @@
                             </div>
                             <small class="form-help">
                                 <span class="required-text">必填项</span> - 令牌将安全地保存在浏览器本地
+                            </small>
+                        </div>
+
+                        <!-- 企业微信 Webhook -->
+                        <div class="form-group">
+                            <label for="wechat-webhook" class="form-label">
+                                📢 企业微信 Webhook 地址
+                            </label>
+                            <div class="input-group">
+                                <input
+                                    type="text"
+                                    id="wechat-webhook"
+                                    class="form-input"
+                                    placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."
+                                >
+                                <button type="button" id="clear-webhook" class="input-btn">🗑️</button>
+                            </div>
+                            <small class="form-help">
+                                可选项 - 用于接收任务完成通知，留空则使用系统默认配置。输入后自动保存到浏览器本地
                             </small>
                         </div>
 
