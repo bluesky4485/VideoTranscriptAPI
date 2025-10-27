@@ -40,6 +40,7 @@ class Config:
     generate_srt = False
     generate_lrc = False
     generate_json = False
+    generate_funasr_compat = True  # 生成 FunASR 兼容格式的 JSON
     verbose = True
     
     @classmethod
@@ -80,6 +81,269 @@ class Config:
         if port:
             cls.server_port = port
 
+
+# ============================================================================
+# FunASR 兼容格式转换相关函数
+# ============================================================================
+
+def _clean_token(token: str) -> str:
+    """清理 token，去除 BPE 标记"""
+    return token.replace('@@', '')
+
+
+def _build_token_position_map(tokens: List[str]) -> Tuple[List[int], str]:
+    """
+    构建 token 到字符位置的映射
+
+    Returns:
+        (token_to_char_pos, reconstructed_text)
+    """
+    token_to_char_pos = []
+    reconstructed = ""
+
+    for token in tokens:
+        token_to_char_pos.append(len(reconstructed))
+        clean = _clean_token(token)
+        reconstructed += clean
+
+    token_to_char_pos.append(len(reconstructed))
+    return token_to_char_pos, reconstructed
+
+
+def _find_token_idx(token_positions: List[int], char_pos: int) -> int:
+    """找到字符位置对应的 token 索引"""
+    for i in range(len(token_positions) - 1):
+        if token_positions[i] <= char_pos < token_positions[i + 1]:
+            return i
+    return len(token_positions) - 2
+
+
+def _split_text_by_punctuation(text: str) -> List[str]:
+    """按主要标点符号分句，保留标点"""
+    primary_punct = r'([。！？!?])'
+    parts = re.split(primary_punct, text)
+
+    sentences = []
+    i = 0
+    while i < len(parts):
+        sentence = parts[i]
+        if i + 1 < len(parts) and parts[i + 1] in '。！？!?':
+            sentence += parts[i + 1]
+            i += 2
+        else:
+            i += 1
+
+        if sentence.strip():
+            sentences.append(sentence.strip())
+
+    return sentences
+
+
+def _remove_punctuation(text: str) -> str:
+    """移除文本中的标点符号和空格"""
+    return re.sub(r'[，。！？、；：,;:!?\s]', '', text)
+
+
+def _optimize_segment_lengths(segments: List[Dict[str, Any]],
+                              min_len: int, max_len: int) -> List[Dict[str, Any]]:
+    """优化段落长度：合并短句、分割长句"""
+    if not segments:
+        return []
+
+    optimized = []
+    buffer = None
+
+    for seg in segments:
+        seg_len = seg['length']
+
+        if buffer is None:
+            buffer = seg.copy()
+            continue
+
+        buffer_len = buffer['length']
+        combined_len = buffer_len + seg_len
+
+        if buffer_len < min_len:
+            if combined_len <= max_len:
+                # 合并
+                buffer['end_time'] = seg['end_time']
+                buffer['text'] = buffer['text'] + seg['text']
+                buffer['length'] = combined_len
+            else:
+                optimized.append(buffer)
+                buffer = seg.copy()
+        elif min_len <= buffer_len <= max_len:
+            optimized.append(buffer)
+            buffer = seg.copy()
+        else:
+            optimized.append(buffer)
+            buffer = seg.copy()
+
+    if buffer is not None:
+        optimized.append(buffer)
+
+    # 处理超长句子
+    final = []
+    for seg in optimized:
+        if seg['length'] > max_len:
+            split_segs = _split_long_segment(seg, max_len)
+            final.extend(split_segs)
+        else:
+            final.append(seg)
+
+    return final
+
+
+def _split_long_segment(segment: Dict[str, Any], max_len: int) -> List[Dict[str, Any]]:
+    """在次级标点处分割超长句子"""
+    text = segment['text']
+    secondary_punct = r'([，,；;])'
+    parts = re.split(secondary_punct, text)
+
+    if len(parts) <= 1:
+        return [segment]
+
+    split_segments = []
+    current = ""
+    start_time = segment['start_time']
+    duration = segment['end_time'] - segment['start_time']
+    total_len = segment['length']
+
+    for part in parts:
+        if len(current + part) <= max_len:
+            current += part
+        else:
+            if current:
+                progress = len(current) / total_len
+                end_time = start_time + duration * progress
+
+                split_segments.append({
+                    'start_time': round(start_time, 2),
+                    'end_time': round(end_time, 2),
+                    'text': current,
+                    'length': len(current)
+                })
+
+                start_time = end_time
+                current = part
+            else:
+                current = part
+
+    if current:
+        split_segments.append({
+            'start_time': round(start_time, 2),
+            'end_time': round(segment['end_time'], 2),
+            'text': current,
+            'length': len(current)
+        })
+
+    return split_segments if split_segments else [segment]
+
+
+def _create_segments_from_capswriter(text: str, tokens: List[str],
+                                     timestamps: List[float],
+                                     min_len: int = 80,
+                                     max_len: int = 300) -> List[Dict[str, Any]]:
+    """
+    从 CapsWriter 数据创建 FunASR 格式的 segments
+
+    Args:
+        text: 带标点的完整文本
+        tokens: BPE token 列表
+        timestamps: 时间戳列表
+        min_len: 最小段落长度
+        max_len: 最大段落长度
+
+    Returns:
+        segments 列表
+    """
+    logger.debug(f"开始创建 segments: text={len(text)}, tokens={len(tokens)}, timestamps={len(timestamps)}")
+
+    # 检查长度是否匹配
+    if len(tokens) != len(timestamps):
+        logger.warning(f"长度不匹配: tokens={len(tokens)}, timestamps={len(timestamps)}")
+        min_len_val = min(len(tokens), len(timestamps))
+        tokens = tokens[:min_len_val]
+        timestamps = timestamps[:min_len_val]
+        logger.info(f"已截断至相同长度: {min_len_val}")
+
+    if not tokens or not timestamps:
+        logger.error("tokens 或 timestamps 为空，无法创建 segments")
+        return []
+
+    # 构建 token 位置映射
+    token_positions, reconstructed = _build_token_position_map(tokens)
+    logger.debug(f"Token 位置映射完成: reconstructed length={len(reconstructed)}")
+
+    # 分句
+    sentences = _split_text_by_punctuation(text)
+    logger.debug(f"按标点分句: {len(sentences)} 个句子")
+
+    # 验证对齐
+    text_clean = _remove_punctuation(text)
+    alignment_diff = abs(len(text_clean) - len(reconstructed))
+
+    if alignment_diff > 5:
+        logger.warning(f"对齐警告: text_clean={len(text_clean)}, reconstructed={len(reconstructed)}, diff={alignment_diff}")
+        logger.warning(f"  这可能导致时间戳不准确，请检查输入数据")
+    else:
+        logger.debug(f"对齐检查通过: diff={alignment_diff}")
+
+    # 映射每个句子到 token 范围
+    segments = []
+    char_offset = 0
+
+    for idx, sentence in enumerate(sentences):
+        sentence_clean = _remove_punctuation(sentence)
+        sentence_len = len(sentence_clean)
+
+        if sentence_len == 0:
+            logger.debug(f"句子 {idx+1} 为空，跳过")
+            continue
+
+        # 查找对应的 token 范围
+        start_token_idx = _find_token_idx(token_positions, char_offset)
+        end_token_idx = _find_token_idx(token_positions, char_offset + sentence_len - 1)
+
+        # 安全范围检查
+        start_token_idx = max(0, min(start_token_idx, len(timestamps) - 1))
+        end_token_idx = max(0, min(end_token_idx, len(timestamps) - 1))
+
+        # 提取时间
+        start_time = timestamps[start_token_idx]
+        end_time = timestamps[end_token_idx]
+
+        segments.append({
+            'start_time': round(start_time, 2),
+            'end_time': round(end_time, 2),
+            'text': sentence,
+            'length': len(sentence)
+        })
+
+        logger.debug(f"句子 {idx+1}: {sentence_len} 字符 -> tokens[{start_token_idx}:{end_token_idx}] -> {start_time:.2f}s-{end_time:.2f}s")
+
+        char_offset += sentence_len
+
+    logger.debug(f"初始分段完成: {len(segments)} 个 segments")
+
+    # 长度优化
+    optimized = _optimize_segment_lengths(segments, min_len, max_len)
+    logger.debug(f"长度优化完成: {len(optimized)} 个 segments")
+
+    # 最终统计
+    if optimized:
+        lengths = [seg['length'] for seg in optimized]
+        in_range = sum(1 for l in lengths if min_len <= l <= max_len)
+        logger.info(f"Segments 生成完成: {len(optimized)} 个片段, {in_range}/{len(optimized)} 在目标范围内")
+    else:
+        logger.warning("未生成任何 segments")
+
+    return optimized
+
+
+# ============================================================================
+# CapsWriter 客户端类
+# ============================================================================
 
 class CapsWriterClient:
     """CapsWriter客户端类"""
@@ -335,14 +599,83 @@ class CapsWriterClient:
                 generated_files.append(merge_txt_file)
                 self.log(f"已生成合并文本文件: {merge_txt_file}")
             
+            # 保存 FunASR 兼容格式的 JSON
+            if Config.generate_funasr_compat:
+                self.log("开始生成 FunASR 兼容格式 JSON...")
+                try:
+                    # 使用带前缀的文件名，临时保存在 output_dir（后续会被复制到缓存目录）
+                    funasr_file = Path(self.output_dir) / f"{base_path.name}_funasr.json"
+
+                    # 验证输入数据
+                    if not text:
+                        self.log("警告: 文本为空，跳过 FunASR 格式生成", "warning")
+                        raise ValueError("text is empty")
+
+                    if not tokens or not timestamps:
+                        self.log(f"警告: tokens 或 timestamps 为空 (tokens={len(tokens)}, timestamps={len(timestamps)})", "warning")
+                        raise ValueError("tokens or timestamps is empty")
+
+                    self.log(f"输入数据: text={len(text)} 字符, tokens={len(tokens)}, timestamps={len(timestamps)}")
+
+                    # 创建 segments
+                    segments = _create_segments_from_capswriter(
+                        text=text,
+                        tokens=tokens,
+                        timestamps=timestamps,
+                        min_len=80,
+                        max_len=300
+                    )
+
+                    if not segments:
+                        self.log("警告: 未生成任何 segments，跳过 FunASR 格式生成", "warning")
+                        raise ValueError("no segments generated")
+
+                    self.log(f"成功创建 {len(segments)} 个 segments")
+
+                    # 构建 FunASR 兼容格式
+                    funasr_data = {
+                        'task_id': result.get('task_id', ''),
+                        'file_name': file_path.name,
+                        'duration': result.get('duration', 0),
+                        'segments': [
+                            {
+                                'start_time': seg['start_time'],
+                                'end_time': seg['end_time'],
+                                'text': seg['text']
+                            }
+                            for seg in segments
+                        ],
+                        'created_at': time.strftime('%Y-%m-%dT%H:%M:%S'),
+                        'processing_time': result.get('time_complete', 0) - result.get('time_start', 0),
+                        'error': None
+                    }
+
+                    # 统计信息
+                    total_duration = sum(seg['end_time'] - seg['start_time'] for seg in segments)
+                    avg_length = sum(len(seg['text']) for seg in segments) / len(segments) if segments else 0
+
+                    self.log(f"Segments 统计: 总时长={total_duration:.2f}s, 平均长度={avg_length:.1f}字符")
+
+                    with open(funasr_file, "w", encoding="utf-8") as f:
+                        json.dump(funasr_data, f, ensure_ascii=False, indent=2)
+
+                    generated_files.append(funasr_file)
+                    self.log(f"✓ 已生成 FunASR 兼容文件: {funasr_file} ({len(segments)} 个片段)")
+
+                except Exception as e:
+                    self.log(f"✗ 生成 FunASR 兼容格式失败: {e}", "warning")
+                    self.log(f"  提示: 主要转录文件（txt）已正常生成，可忽略此警告", "warning")
+                    import traceback
+                    self.log(f"  详细错误: {traceback.format_exc()}", "warning")
+
             # 显示转录结果摘要
             if text:
                 preview = text[:100] + "..." if len(text) > 100 else text
                 self.log(f"转录结果预览: {preview}")
-            
+
         except Exception as e:
             self.log(f"保存结果时出错: {e}", "error")
-        
+
         return generated_files
     
     async def transcribe_file_async(self, file_path: str) -> Tuple[bool, List[Path]]:

@@ -116,22 +116,23 @@ class Transcriber:
             
             if success and generated_files:
                 logger.info(f"转录完成，生成文件: {[str(f) for f in generated_files]}")
-                
+
                 # 准备返回结果
                 result = {
                     "transcript": "",
-                    "txt_path": None
+                    "txt_path": None,
+                    "funasr_json_data": None  # 用于存储 FunASR 兼容格式的 JSON 数据
                 }
-                
+
                 # 处理生成的文件
                 for file_path in generated_files:
                     # 将Path对象转换为字符串
                     file_path_str = str(file_path)
-                    
+
                     # 处理txt文件
                     if file_path_str.endswith(".txt") and not file_path_str.endswith(".merge.txt"):
                         result["txt_path"] = file_path_str
-                        
+
                         # 读取转录文本
                         try:
                             with open(file_path_str, 'r', encoding='utf-8') as f:
@@ -139,13 +140,23 @@ class Transcriber:
                             logger.info(f"已从文本文件提取转录文本")
                         except Exception as e:
                             logger.warning(f"读取转录文本失败: {str(e)}")
-                
+
+                    # 处理 FunASR 兼容格式的 JSON 文件
+                    elif file_path_str.endswith("_funasr.json"):
+                        try:
+                            import json
+                            with open(file_path_str, 'r', encoding='utf-8') as f:
+                                result["funasr_json_data"] = json.load(f)
+                            logger.info(f"已读取 FunASR 兼容格式 JSON: {file_path_str}")
+                        except Exception as e:
+                            logger.warning(f"读取 FunASR JSON 失败: {str(e)}")
+
                 # 确保找到了txt文件
                 if not result["txt_path"]:
                     error_msg = f"未找到文本文件: {audio_path}"
                     logger.error(error_msg)
                     raise RuntimeError(error_msg)
-                
+
                 return result
             else:
                 error_msg = f"转录文件失败: {audio_path}"

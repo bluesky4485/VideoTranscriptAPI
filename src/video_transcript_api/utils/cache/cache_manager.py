@@ -195,7 +195,7 @@ class CacheManager:
         file_path = self.cache_dir / platform / year / year_month / media_id
         return file_path
         
-    def save_cache(self, 
+    def save_cache(self,
                    platform: str,
                    url: str,
                    media_id: str,
@@ -204,10 +204,11 @@ class CacheManager:
                    transcript_type: str,
                    title: str = "",
                    author: str = "",
-                   description: str = "") -> Optional[Dict[str, Any]]:
+                   description: str = "",
+                   extra_json_data: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         """
         保存缓存
-        
+
         Args:
             platform: 平台名称
             url: 视频URL
@@ -218,7 +219,8 @@ class CacheManager:
             title: 视频标题
             author: 作者
             description: 描述
-            
+            extra_json_data: 额外的JSON数据（用于CapsWriter的FunASR兼容格式）
+
         Returns:
             Dict: 包含缓存信息的字典
         """
@@ -226,7 +228,7 @@ class CacheManager:
             # 获取文件存储路径
             file_path = self._get_file_path(platform, media_id)
             file_path.mkdir(parents=True, exist_ok=True)
-            
+
             # 保存转录文件
             if transcript_type == "funasr":
                 transcript_file = file_path / "transcript_funasr.json"
@@ -236,6 +238,13 @@ class CacheManager:
                 transcript_file = file_path / "transcript_capswriter.txt"
                 with open(transcript_file, 'w', encoding='utf-8') as f:
                     f.write(transcript_data)
+
+                # 如果提供了额外的JSON数据（CapsWriter的FunASR兼容格式），也保存
+                if extra_json_data:
+                    json_file = file_path / "transcript_capswriter.json"
+                    with open(json_file, 'w', encoding='utf-8') as f:
+                        json.dump(extra_json_data, f, ensure_ascii=False, indent=2)
+                    logger.info(f"已保存 CapsWriter FunASR 兼容格式: {json_file}")
                     
             # 计算相对路径（兼容 Windows 和 Linux）
             relative_path = file_path.relative_to(self.cache_dir)

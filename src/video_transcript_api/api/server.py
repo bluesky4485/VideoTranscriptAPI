@@ -659,7 +659,8 @@ def process_transcription(task_id, url, use_speaker_recognition=False, wechat_we
                     temp_output_base = datetime.datetime.now().strftime("%y%m%d-%H%M%S")
                     transcription_result = transcriber.transcribe(local_file, temp_output_base)
                     transcript = transcription_result.get("transcript", "")
-                    
+                    funasr_json_data = transcription_result.get("funasr_json_data")  # 获取 FunASR 兼容格式的 JSON
+
                     # 使用新缓存系统保存
                     cache_result = cache_manager.save_cache(
                         platform=platform,
@@ -670,7 +671,8 @@ def process_transcription(task_id, url, use_speaker_recognition=False, wechat_we
                         transcript_type='capswriter',
                         title=video_title,
                         author=author,
-                        description=description
+                        description=description,
+                        extra_json_data=funasr_json_data  # 传递 FunASR JSON 数据
                     )
                     
                     if not cache_result:
