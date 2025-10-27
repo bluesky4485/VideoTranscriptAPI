@@ -33,8 +33,7 @@
       "timezone": "UTC+8"
     },
     "wechat": {
-      "webhook": "your-webhook-url-here",
-      "calibrated_text_max_length": 3000
+      "webhook": "your-webhook-url-here"
     },
     "bbdown": {
       "use_bbdown": true,
