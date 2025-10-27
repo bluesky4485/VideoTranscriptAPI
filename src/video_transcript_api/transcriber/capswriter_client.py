@@ -303,33 +303,32 @@ class CapsWriterClient:
         try:
             # 提取结果数据
             text = result.get('text', '')
-            text_split = re.sub('[，。？]', '\n', text)
             timestamps = result.get('timestamps', [])
             tokens = result.get('tokens', [])
-            
+
             # 定义输出文件路径
             json_file = Path(self.output_dir) / f"{base_path.name}.json"
             txt_file = Path(self.output_dir) / f"{base_path.name}.txt"
             merge_txt_file = Path(self.output_dir) / f"{base_path.name}.merge.txt"
-            
+
             # 保存JSON文件
             if Config.generate_json:
                 with open(json_file, "w", encoding="utf-8") as f:
                     json.dump({
-                        'timestamps': timestamps, 
+                        'timestamps': timestamps,
                         'tokens': tokens
                     }, f, ensure_ascii=False, indent=2)
                 generated_files.append(json_file)
                 self.log(f"已生成详细信息文件: {json_file}")
-            
-            # 保存分行文本文件
+
+            # 保存文本文件（单行完整文本，供LLM处理）
             if Config.generate_txt:
                 with open(txt_file, "w", encoding="utf-8") as f:
-                    f.write(text_split)
+                    f.write(text)
                 generated_files.append(txt_file)
                 self.log(f"已生成文本文件: {txt_file}")
-            
-            # 保存合并文本文件
+
+            # 保存合并文本文件（兼容旧格式）
             if Config.generate_merge_txt:
                 with open(merge_txt_file, "w", encoding="utf-8") as f:
                     f.write(text)
