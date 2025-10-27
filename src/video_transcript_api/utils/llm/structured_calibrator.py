@@ -231,7 +231,7 @@ class StructuredCalibrator:
                     
                     # 验证
                     if self.enable_validation:
-                        validation_result = self._validate_calibration(chunk, calibrated_result)
+                        validation_result = self._validate_calibration(chunk, calibrated_result, video_metadata)
                         
                         if validation_result['pass']:
                             calibrated_chunks[index] = calibrated_result
@@ -499,14 +499,15 @@ class StructuredCalibrator:
             logger.debug(f"原始响应: {response}")
             raise Exception(f"无法解析校对结果: {e}")
     
-    def _validate_calibration(self, original_chunk: List[Dict[str, Any]], calibrated_chunk: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _validate_calibration(self, original_chunk: List[Dict[str, Any]], calibrated_chunk: List[Dict[str, Any]], video_metadata: Dict[str, str]) -> Dict[str, Any]:
         """
         验证校对质量
-        
+
         Args:
             original_chunk: 原始chunk
             calibrated_chunk: 校对后的chunk
-            
+            video_metadata: 视频元数据（用于提供上下文信息）
+
         Returns:
             Dict: 验证结果
         """
@@ -535,7 +536,7 @@ class StructuredCalibrator:
             }
             
             # 生成验证prompt
-            prompt = self._generate_validation_prompt(original_data, calibrated_data)
+            prompt = self._generate_validation_prompt(original_data, calibrated_data, video_metadata)
             
             # 调用LLM验证
             response = call_llm_api(
@@ -574,11 +575,27 @@ class StructuredCalibrator:
                 'recommendation': '验证异常，假设通过'
             }
     
-    def _generate_validation_prompt(self, original_data: Dict[str, Any], calibrated_data: Dict[str, Any]) -> str:
+    def _generate_validation_prompt(self, original_data: Dict[str, Any], calibrated_data: Dict[str, Any], video_metadata: Dict[str, str]) -> str:
         """生成验证prompt"""
+        # 构建辅助信息（与校对prompt保持一致）
+        context_info = ""
+        video_title = video_metadata.get('video_title', '')
+        author = video_metadata.get('author', '')
+        description = video_metadata.get('description', '')
+
+        if video_title or author or description:
+            context_info = "\n以下是视频的辅助信息，可以帮助你更准确地评估校对质量（特别是专有名词、人名等）：\n"
+            if video_title:
+                context_info += f"- 视频标题：{video_title}\n"
+            if author:
+                context_info += f"- 作者/频道：{author}\n"
+            if description:
+                context_info += f"- 视频描述：{description[:500]}{'...' if len(description) > 500 else ''}\n"
+            context_info += "\n"
+
         prompt = f"""你是一个专业的文本校对质量评估专家。请评估以下校对结果的质量。
 
-原始文本：
+{context_info}原始文本：
 {json.dumps(original_data, ensure_ascii=False, indent=2)}
 
 校对后文本：
@@ -587,7 +604,7 @@ class StructuredCalibrator:
 请从以下维度评估校对质量（每项0-10分）：
 
 1. 格式正确性：JSON格式是否正确，字段是否完整
-2. 内容保真度：是否保持了原始内容的意思，没有添加或删除实质信息
+2. 内容保真度：是否保持了原始内容的意思，没有添加或删除实质信息。**注意：结合视频辅助信息，某些专有名词、人名的修正是合理的**
 3. 文本质量：错别字、语法、标点是否得到改善
 4. 说话人一致性：说话人标识是否保持不变
 5. 时间信息一致性：时间戳是否保持不变
@@ -598,7 +615,7 @@ class StructuredCalibrator:
   "overall_score": 8.5,
   "scores": {{
     "format_correctness": 10,
-    "content_fidelity": 9, 
+    "content_fidelity": 9,
     "text_quality": 8,
     "speaker_consistency": 10,
     "time_consistency": 10
@@ -613,8 +630,9 @@ class StructuredCalibrator:
 - overall_score >= {self.overall_score_threshold} 且所有单项 >= {self.minimum_single_score} 才算通过
 - 格式错误直接不通过
 - 内容增删超过10%不通过
-- 说话人或时间信息改变直接不通过"""
-        
+- 说话人或时间信息改变直接不通过
+- **参考视频辅助信息评估专有名词修正的合理性**"""
+
         return prompt
     
     def _parse_validation_response(self, response: str) -> Dict[str, Any]:
