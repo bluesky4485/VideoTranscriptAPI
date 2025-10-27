@@ -169,31 +169,56 @@ class EnhancedLLMProcessor:
         """处理TXT格式的分段校对"""
         import tempfile
         import os
-        
+
         transcript = llm_task["transcript"]
         video_title = llm_task["video_title"]
         description = llm_task.get("description", "")
-        
+        task_id = llm_task["task_id"]
+
         # 创建临时文件
         with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix='.txt', delete=False) as temp_file:
             temp_file.write(transcript)
             temp_file_path = temp_file.name
-        
+
         try:
             # 使用分段处理器进行校对
             calibrated_text = self.segmented_llm_processor.calibrate_text_segmented(
                 temp_file_path, 'txt', video_title, description
             )
-            
+
             # 进行总结
             summary_text = self.segmented_llm_processor.summarize_text_segmented(
                 calibrated_text, video_title, description
             )
-            
-            return {
+
+            result_dict = {
                 '校对文本': calibrated_text,
                 '内容总结': summary_text
             }
+
+            # 处理校对失败的情况：在错误信息后附加原始转录文本
+            if result_dict.get('校对文本', '').startswith('【LLM call failed】'):
+                logger.warning(f"分段校对失败，附加原始转录文本: {task_id}")
+                result_dict['校对文本'] = (
+                    f"{result_dict['校对文本']}\n\n"
+                    f"{'='*60}\n"
+                    f"以下是原始转录文本：\n"
+                    f"{'='*60}\n\n"
+                    f"{transcript}"
+                )
+
+            # 处理总结失败的情况：在错误信息后附加原始转录文本
+            if result_dict.get('内容总结', '').startswith('【LLM call failed】'):
+                logger.warning(f"分段总结失败，附加原始转录文本: {task_id}")
+                result_dict['内容总结'] = (
+                    f"{result_dict['内容总结']}\n\n"
+                    f"{'='*60}\n"
+                    f"以下是原始转录文本：\n"
+                    f"{'='*60}\n\n"
+                    f"{transcript}"
+                )
+
+            return result_dict
         finally:
             # 清理临时文件
             if os.path.exists(temp_file_path):
@@ -204,31 +229,57 @@ class EnhancedLLMProcessor:
         import tempfile
         import json
         import os
-        
+
         transcription_data = llm_task.get("transcription_data")
+        transcript = llm_task["transcript"]
         video_title = llm_task["video_title"]
         description = llm_task.get("description", "")
-        
+        task_id = llm_task["task_id"]
+
         # 创建临时JSON文件
         with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix='.json', delete=False) as temp_file:
             json.dump(transcription_data, temp_file, ensure_ascii=False, indent=2)
             temp_file_path = temp_file.name
-        
+
         try:
             # 使用分段处理器进行校对
             calibrated_text = self.segmented_llm_processor.calibrate_text_segmented(
                 temp_file_path, 'json', video_title, description
             )
-            
+
             # 进行总结
             summary_text = self.segmented_llm_processor.summarize_text_segmented(
                 calibrated_text, video_title, description
             )
-            
-            return {
+
+            result_dict = {
                 '校对文本': calibrated_text,
                 '内容总结': summary_text
             }
+
+            # 处理校对失败的情况：在错误信息后附加原始转录文本
+            if result_dict.get('校对文本', '').startswith('【LLM call failed】'):
+                logger.warning(f"JSON分段校对失败，附加原始转录文本: {task_id}")
+                result_dict['校对文本'] = (
+                    f"{result_dict['校对文本']}\n\n"
+                    f"{'='*60}\n"
+                    f"以下是原始转录文本：\n"
+                    f"{'='*60}\n\n"
+                    f"{transcript}"
+                )
+
+            # 处理总结失败的情况：在错误信息后附加原始转录文本
+            if result_dict.get('内容总结', '').startswith('【LLM call failed】'):
+                logger.warning(f"JSON分段总结失败，附加原始转录文本: {task_id}")
+                result_dict['内容总结'] = (
+                    f"{result_dict['内容总结']}\n\n"
+                    f"{'='*60}\n"
+                    f"以下是原始转录文本：\n"
+                    f"{'='*60}\n\n"
+                    f"{transcript}"
+                )
+
+            return result_dict
         finally:
             # 清理临时文件
             if os.path.exists(temp_file_path):
@@ -243,36 +294,36 @@ class EnhancedLLMProcessor:
         author = llm_task["author"]
         description = llm_task.get("description", "")
         transcription_data = llm_task.get("transcription_data")
-        
+
         logger.info(f"使用原有逻辑处理短文本: {task_id}")
-        
+
         # 生成校对提示词
         calibrate_prompt = self._generate_original_calibrate_prompt(
             transcript, video_title, author, description, use_speaker_recognition
         )
-        
+
         # 生成总结提示词
         summary_prompt = self._generate_original_summary_prompt(
             transcript, video_title, author, description, use_speaker_recognition, transcription_data
         )
-        
+
         # 并发调用LLM API
         result_dict = {}
-        
+
         def run_calibrate():
             result_dict['校对文本'] = call_llm_api(
                 self.calibrate_model, calibrate_prompt, self.api_key,
                 self.base_url, self.max_retries, self.retry_delay,
                 self.calibrate_reasoning_effort, "calibrate"
             )
-        
+
         def run_summary():
             result_dict['内容总结'] = call_llm_api(
                 self.summary_model, summary_prompt, self.api_key,
                 self.base_url, self.max_retries, self.retry_delay,
                 self.summary_reasoning_effort, "summary"
             )
-        
+
         # 启动并发线程
         t1 = threading.Thread(target=run_calibrate)
         t2 = threading.Thread(target=run_summary)
@@ -280,7 +331,29 @@ class EnhancedLLMProcessor:
         t2.start()
         t1.join()
         t2.join()
-        
+
+        # 处理校对失败的情况：在错误信息后附加原始转录文本
+        if result_dict.get('校对文本', '').startswith('【LLM call failed】'):
+            logger.warning(f"校对失败，附加原始转录文本: {task_id}")
+            result_dict['校对文本'] = (
+                f"{result_dict['校对文本']}\n\n"
+                f"{'='*60}\n"
+                f"以下是原始转录文本：\n"
+                f"{'='*60}\n\n"
+                f"{transcript}"
+            )
+
+        # 处理总结失败的情况：在错误信息后附加原始转录文本
+        if result_dict.get('内容总结', '').startswith('【LLM call failed】'):
+            logger.warning(f"总结失败，附加原始转录文本: {task_id}")
+            result_dict['内容总结'] = (
+                f"{result_dict['内容总结']}\n\n"
+                f"{'='*60}\n"
+                f"以下是原始转录文本：\n"
+                f"{'='*60}\n\n"
+                f"{transcript}"
+            )
+
         return result_dict
     
     def _generate_original_calibrate_prompt(self, transcript: str, video_title: str, 
