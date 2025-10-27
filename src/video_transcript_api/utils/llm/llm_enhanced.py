@@ -50,7 +50,50 @@ class EnhancedLLMProcessor:
         self.structured_calibrator = StructuredCalibrator(config)
         
         logger.info("增强LLM处理器初始化完成")
-    
+
+    @staticmethod
+    def _format_transcript_for_display(transcript: str, sentences_per_paragraph: int = 3) -> str:
+        """
+        格式化转录文本，基于标点符号进行分段，提升可读性
+
+        Args:
+            transcript: 原始转录文本
+            sentences_per_paragraph: 每个段落包含的句子数量，默认3句
+
+        Returns:
+            str: 格式化后的文本，包含段落分隔
+        """
+        import re
+
+        # 定义句子结束标点符号
+        sentence_endings = r'([。！？!?])'
+
+        # 按句子结束标点符号分割文本
+        sentences = re.split(sentence_endings, transcript)
+
+        # 重新组合句子和标点符号
+        formatted_sentences = []
+        for i in range(0, len(sentences) - 1, 2):
+            if i + 1 < len(sentences):
+                sentence = sentences[i] + sentences[i + 1]
+                sentence = sentence.strip()
+                if sentence:
+                    formatted_sentences.append(sentence)
+
+        # 处理最后一个可能没有标点的片段
+        if len(sentences) % 2 == 1 and sentences[-1].strip():
+            formatted_sentences.append(sentences[-1].strip())
+
+        # 按段落组织句子
+        paragraphs = []
+        for i in range(0, len(formatted_sentences), sentences_per_paragraph):
+            paragraph = ''.join(formatted_sentences[i:i + sentences_per_paragraph])
+            if paragraph:
+                paragraphs.append(paragraph)
+
+        # 段落之间空一行
+        return '\n\n'.join(paragraphs)
+
     def process_llm_task(self, llm_task: Dict[str, Any]) -> Dict[str, Any]:
         """
         处理LLM任务，自动判断是否需要分段和结构化处理
@@ -199,23 +242,25 @@ class EnhancedLLMProcessor:
             # 处理校对失败的情况：在错误信息后附加原始转录文本
             if result_dict.get('校对文本', '').startswith('【LLM call failed】'):
                 logger.warning(f"分段校对失败，附加原始转录文本: {task_id}")
+                formatted_transcript = self._format_transcript_for_display(transcript)
                 result_dict['校对文本'] = (
                     f"{result_dict['校对文本']}\n\n"
                     f"{'='*60}\n"
                     f"以下是原始转录文本：\n"
                     f"{'='*60}\n\n"
-                    f"{transcript}"
+                    f"{formatted_transcript}"
                 )
 
             # 处理总结失败的情况：在错误信息后附加原始转录文本
             if result_dict.get('内容总结', '').startswith('【LLM call failed】'):
                 logger.warning(f"分段总结失败，附加原始转录文本: {task_id}")
+                formatted_transcript = self._format_transcript_for_display(transcript)
                 result_dict['内容总结'] = (
                     f"{result_dict['内容总结']}\n\n"
                     f"{'='*60}\n"
                     f"以下是原始转录文本：\n"
                     f"{'='*60}\n\n"
-                    f"{transcript}"
+                    f"{formatted_transcript}"
                 )
 
             return result_dict
@@ -260,23 +305,25 @@ class EnhancedLLMProcessor:
             # 处理校对失败的情况：在错误信息后附加原始转录文本
             if result_dict.get('校对文本', '').startswith('【LLM call failed】'):
                 logger.warning(f"JSON分段校对失败，附加原始转录文本: {task_id}")
+                formatted_transcript = self._format_transcript_for_display(transcript)
                 result_dict['校对文本'] = (
                     f"{result_dict['校对文本']}\n\n"
                     f"{'='*60}\n"
                     f"以下是原始转录文本：\n"
                     f"{'='*60}\n\n"
-                    f"{transcript}"
+                    f"{formatted_transcript}"
                 )
 
             # 处理总结失败的情况：在错误信息后附加原始转录文本
             if result_dict.get('内容总结', '').startswith('【LLM call failed】'):
                 logger.warning(f"JSON分段总结失败，附加原始转录文本: {task_id}")
+                formatted_transcript = self._format_transcript_for_display(transcript)
                 result_dict['内容总结'] = (
                     f"{result_dict['内容总结']}\n\n"
                     f"{'='*60}\n"
                     f"以下是原始转录文本：\n"
                     f"{'='*60}\n\n"
-                    f"{transcript}"
+                    f"{formatted_transcript}"
                 )
 
             return result_dict
@@ -335,23 +382,25 @@ class EnhancedLLMProcessor:
         # 处理校对失败的情况：在错误信息后附加原始转录文本
         if result_dict.get('校对文本', '').startswith('【LLM call failed】'):
             logger.warning(f"校对失败，附加原始转录文本: {task_id}")
+            formatted_transcript = self._format_transcript_for_display(transcript)
             result_dict['校对文本'] = (
                 f"{result_dict['校对文本']}\n\n"
                 f"{'='*60}\n"
                 f"以下是原始转录文本：\n"
                 f"{'='*60}\n\n"
-                f"{transcript}"
+                f"{formatted_transcript}"
             )
 
         # 处理总结失败的情况：在错误信息后附加原始转录文本
         if result_dict.get('内容总结', '').startswith('【LLM call failed】'):
             logger.warning(f"总结失败，附加原始转录文本: {task_id}")
+            formatted_transcript = self._format_transcript_for_display(transcript)
             result_dict['内容总结'] = (
                 f"{result_dict['内容总结']}\n\n"
                 f"{'='*60}\n"
                 f"以下是原始转录文本：\n"
                 f"{'='*60}\n\n"
-                f"{transcript}"
+                f"{formatted_transcript}"
             )
 
         return result_dict
