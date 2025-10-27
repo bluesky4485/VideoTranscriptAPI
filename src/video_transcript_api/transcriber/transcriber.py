@@ -121,7 +121,8 @@ class Transcriber:
                 result = {
                     "transcript": "",
                     "txt_path": None,
-                    "funasr_json_data": None  # 用于存储 FunASR 兼容格式的 JSON 数据
+                    "funasr_json_data": None,  # 用于存储 FunASR 兼容格式的 JSON 数据
+                    "generated_files": generated_files  # 返回生成的文件列表，供后续清理
                 }
 
                 # 处理生成的文件

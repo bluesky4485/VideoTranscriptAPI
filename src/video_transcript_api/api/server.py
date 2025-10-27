@@ -7,6 +7,7 @@ import datetime
 import re
 import threading
 import queue
+from pathlib import Path
 from fastapi import FastAPI, HTTPException, Depends, Header, BackgroundTasks, Request
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
@@ -674,9 +675,21 @@ def process_transcription(task_id, url, use_speaker_recognition=False, wechat_we
                         description=description,
                         extra_json_data=funasr_json_data  # 传递 FunASR JSON 数据
                     )
-                    
+
                     if not cache_result:
                         logger.error("保存CapsWriter转录结果到缓存失败")
+                    else:
+                        # 缓存保存成功后，清理临时文件
+                        generated_files = transcription_result.get("generated_files", [])
+                        if generated_files:
+                            for temp_file in generated_files:
+                                try:
+                                    temp_file_path = Path(temp_file)
+                                    if temp_file_path.exists():
+                                        temp_file_path.unlink()
+                                        logger.info(f"已清理临时文件: {temp_file_path}")
+                                except Exception as e:
+                                    logger.warning(f"清理临时文件失败 {temp_file}: {str(e)}")
                 
                 # 获取转录文本
                 transcript = transcription_result.get("transcript", "")
