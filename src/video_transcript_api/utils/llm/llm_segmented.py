@@ -310,32 +310,44 @@ class SegmentedLLMProcessor:
         
         return calibrate_prompt
     
-    def summarize_text_segmented(self, calibrated_text: str, title: str = "", description: str = "") -> str:
+    def summarize_text_segmented(self, calibrated_text: str, title: str = "", description: str = "", selected_summary_model: str = None, selected_reasoning_effort: str = None) -> str:
         """
         对校对后的文本进行总结（不分段，直接发送全文）
-        
+
         Args:
             calibrated_text: 校对后的文本
             title: 视频标题
             description: 视频描述
-            
+            selected_summary_model: 选定的总结模型（如果为None则使用默认模型）
+            selected_reasoning_effort: 选定的 reasoning_effort（如果为None则使用默认值）
+
         Returns:
             总结文本
         """
         logger.info(f"开始文本总结，长度: {len(calibrated_text)} 字符")
-        
+
+        # 如果未指定模型，使用默认模型
+        if selected_summary_model is None:
+            selected_summary_model = self.summary_model
+
+        # 如果未指定 reasoning_effort，使用默认值
+        if selected_reasoning_effort is None:
+            selected_reasoning_effort = self.summary_reasoning_effort
+
         # 不再分段，直接对全文进行总结，让LLM有全局理解
-        return self._summarize_single_text(calibrated_text, title, description)
+        return self._summarize_single_text(calibrated_text, title, description, selected_summary_model, selected_reasoning_effort)
     
-    def _summarize_single_text(self, text: str, title: str, description: str) -> str:
+    def _summarize_single_text(self, text: str, title: str, description: str, selected_summary_model: str, selected_reasoning_effort: str) -> str:
         """
         对单个文本进行总结
-        
+
         Args:
             text: 文本内容
             title: 视频标题
             description: 视频描述
-            
+            selected_summary_model: 选定的总结模型
+            selected_reasoning_effort: 选定的 reasoning_effort
+
         Returns:
             总结文本
         """
@@ -345,22 +357,23 @@ class SegmentedLLMProcessor:
         unique_speakers = set(re.findall(speaker_pattern, text))
         speaker_count = len(unique_speakers) if unique_speakers else 1
         use_speaker_recognition = len(unique_speakers) > 0
-        
+
         logger.info(f"检测到说话人数量: {speaker_count}，选择相应的总结策略")
-        
+
         prompt = self._generate_summary_prompt(text, title, description, use_speaker_recognition, speaker_count)
 
+        # 使用选定的总结模型和 reasoning_effort
         summary = call_llm_api(
-            model=self.summary_model,
+            model=selected_summary_model,
             prompt=prompt,
             api_key=self.api_key,
             base_url=self.base_url,
             max_retries=self.max_retries,
             retry_delay=self.retry_delay,
-            reasoning_effort=self.summary_reasoning_effort,
+            reasoning_effort=selected_reasoning_effort,
             task_type="summary"
         )
-        
+
         logger.info("文本总结完成")
         return summary
     

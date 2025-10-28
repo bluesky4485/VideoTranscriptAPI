@@ -41,14 +41,31 @@ class EnhancedLLMProcessor:
         self.summary_reasoning_effort = self.llm_config.get('summary_reasoning_effort', None)
         self.max_retries = self.llm_config['max_retries']
         self.retry_delay = self.llm_config['retry_delay']
-        
+
+        # 风险模型配置
+        self.risk_summary_model = self.llm_config.get('risk_summary_model')
+        self.risk_summary_reasoning_effort = self.llm_config.get('risk_summary_reasoning_effort', None)
+        self.enable_risk_model_selection = self.llm_config.get('enable_risk_model_selection', False)
+
+        # 配置验证
+        if self.enable_risk_model_selection:
+            if not self.risk_summary_model:
+                logger.error("enable_risk_model_selection is True but risk_summary_model is not configured")
+                raise ValueError("risk_summary_model must be configured when enable_risk_model_selection is enabled")
+            logger.info(f"Risk model selection enabled. Default: {self.summary_model}, Risk: {self.risk_summary_model}")
+        else:
+            logger.info(f"Risk model selection disabled. Using default summary model: {self.summary_model}")
+
         # 初始化分段处理器
         self.segmentation_processor = TextSegmentationProcessor(config)
         self.segmented_llm_processor = SegmentedLLMProcessor(config)
-        
+
         # 初始化结构化校对器
         self.structured_calibrator = StructuredCalibrator(config)
-        
+
+        # 保存logger引用以便其他方法使用
+        self.logger = logger
+
         logger.info("增强LLM处理器初始化完成")
 
     @staticmethod
@@ -94,6 +111,88 @@ class EnhancedLLMProcessor:
         # 段落之间空一行
         return '\n\n'.join(paragraphs)
 
+    def _detect_risk_in_metadata(self, title: str, author: str, description: str) -> tuple:
+        """
+        检测元数据中是否包含风险内容
+
+        Args:
+            title: 视频标题
+            author: 视频作者
+            description: 视频描述
+
+        Returns:
+            (has_risk, sensitive_words): 是否有风险，检测到的敏感词列表
+        """
+        # 合并所有元数据
+        metadata_text = f"{title} {author} {description}".strip()
+
+        if not metadata_text:
+            return False, []
+
+        try:
+            # 复用现有的 risk_control 模块
+            from video_transcript_api.utils.risk_control import is_enabled, sanitize_text
+
+            # 如果 risk_control 未启用，返回无风险
+            if not is_enabled():
+                self.logger.debug("Risk control module is not enabled, skipping risk detection in metadata")
+                return False, []
+
+            # 检测风险
+            result = sanitize_text(metadata_text, text_type="general")
+            has_risk = result.get("has_sensitive", False)
+            sensitive_words = result.get("sensitive_words", [])
+
+            return has_risk, sensitive_words
+
+        except Exception as e:
+            self.logger.error(f"Error during risk detection in metadata: {str(e)}")
+            # 检测失败时，为安全起见，假设无风险（使用默认模型）
+            return False, []
+
+    def _select_summary_model(self, task_id: str, title: str, author: str, description: str) -> tuple:
+        """
+        根据元数据风险检测结果选择总结模型和对应的 reasoning_effort
+
+        Args:
+            task_id: 任务ID
+            title: 视频标题
+            author: 视频作者
+            description: 视频描述
+
+        Returns:
+            (selected_model, selected_reasoning_effort): 选定的模型名称和 reasoning_effort
+        """
+        if not self.enable_risk_model_selection:
+            self.logger.info(f"Task {task_id}: Risk model selection disabled, using default summary model: {self.summary_model}")
+            return self.summary_model, self.summary_reasoning_effort
+
+        # 检测元数据风险
+        has_risk, sensitive_words = self._detect_risk_in_metadata(title, author, description)
+
+        if has_risk:
+            # 检测到风险，使用风险模型
+            sensitive_words_display = sensitive_words[:5]
+            if len(sensitive_words) > 5:
+                sensitive_words_display_str = f"{sensitive_words_display}..."
+            else:
+                sensitive_words_display_str = str(sensitive_words_display)
+
+            self.logger.warning(
+                f"Task {task_id}: Risk content detected in metadata. "
+                f"Sensitive words found: {sensitive_words_display_str}. "
+                f"Switching to risk summary model: {self.risk_summary_model} "
+                f"(reasoning_effort: {self.risk_summary_reasoning_effort})"
+            )
+            return self.risk_summary_model, self.risk_summary_reasoning_effort
+        else:
+            # 未检测到风险，使用默认模型
+            self.logger.info(
+                f"Task {task_id}: No risk detected in metadata (title/author/description). "
+                f"Using default summary model: {self.summary_model}"
+            )
+            return self.summary_model, self.summary_reasoning_effort
+
     def process_llm_task(self, llm_task: Dict[str, Any]) -> Dict[str, Any]:
         """
         处理LLM任务，自动判断是否需要分段和结构化处理
@@ -113,13 +212,16 @@ class EnhancedLLMProcessor:
         transcription_data = llm_task.get("transcription_data")
         platform = llm_task.get("platform", "")
         media_id = llm_task.get("media_id", "")
-        
+
         logger.info(f"开始处理LLM任务: {task_id}, 标题: {video_title}")
-        
+
+        # 选择总结模型和 reasoning_effort（基于元数据风险检测）
+        selected_summary_model, selected_reasoning_effort = self._select_summary_model(task_id, video_title, author, description)
+
         # 优先使用结构化处理（仅限说话人识别场景）
         if use_speaker_recognition and transcription_data and platform and media_id:
             logger.info(f"检测到说话人识别场景，使用结构化处理: {task_id}, 平台: {platform}, 媒体ID: {media_id}")
-            return self._process_with_structured_output(llm_task)
+            return self._process_with_structured_output(llm_task, selected_summary_model, selected_reasoning_effort)
         
         # 根据transcription_data判断文件类型和处理方式
         if use_speaker_recognition and transcription_data:
@@ -140,48 +242,52 @@ class EnhancedLLMProcessor:
         if need_segmentation:
             if temp_file_needed:
                 # 创建临时JSON文件进行分段处理
-                return self._process_json_segmented(llm_task)
+                return self._process_json_segmented(llm_task, selected_summary_model, selected_reasoning_effort)
             else:
                 # 直接对文本进行分段处理
-                return self._process_txt_segmented(llm_task)
+                return self._process_txt_segmented(llm_task, selected_summary_model, selected_reasoning_effort)
         else:
             # 使用原有逻辑处理
-            return self._process_original_logic(llm_task)
+            return self._process_original_logic(llm_task, selected_summary_model, selected_reasoning_effort)
     
-    def _process_with_structured_output(self, llm_task: Dict[str, Any]) -> Dict[str, Any]:
+    def _process_with_structured_output(self, llm_task: Dict[str, Any], selected_summary_model: str, selected_reasoning_effort: str) -> Dict[str, Any]:
         """
         使用结构化输出处理说话人识别任务
-        
+
         Args:
             llm_task: LLM任务字典
-            
+            selected_summary_model: 选定的总结模型
+            selected_reasoning_effort: 选定的 reasoning_effort
+
         Returns:
             包含校对文本、总结文本和结构化数据的字典
         """
         try:
             # 构建缓存目录路径
             cache_dir = self._build_cache_dir_from_task(llm_task)
-            
+
             # 构建视频元数据
             video_metadata = {
                 'video_title': llm_task["video_title"],
                 'author': llm_task["author"],
                 'description': llm_task.get("description", "")
             }
-            
+
             # 调用结构化处理方法
             result = self.process_llm_task_with_structure(
                 cache_dir=cache_dir,
                 funasr_data=llm_task.get("transcription_data"),
-                video_metadata=video_metadata
+                video_metadata=video_metadata,
+                selected_summary_model=selected_summary_model,
+                selected_reasoning_effort=selected_reasoning_effort
             )
-            
+
             logger.info(f"结构化处理完成: {llm_task['task_id']}")
             return result
-            
+
         except Exception as e:
             logger.error(f"结构化处理失败，降级到传统处理: {e}")
-            return self._process_original_logic(llm_task)
+            return self._process_original_logic(llm_task, selected_summary_model, selected_reasoning_effort)
     
     def _build_cache_dir_from_task(self, llm_task: Dict[str, Any]) -> str:
         """从任务信息构建缓存目录路径"""
@@ -208,8 +314,14 @@ class EnhancedLLMProcessor:
         
         return cache_dir
     
-    def _process_txt_segmented(self, llm_task: Dict[str, Any]) -> Dict[str, str]:
-        """处理TXT格式的分段校对"""
+    def _process_txt_segmented(self, llm_task: Dict[str, Any], selected_summary_model: str, selected_reasoning_effort: str) -> Dict[str, str]:
+        """处理TXT格式的分段校对
+
+        Args:
+            llm_task: LLM任务字典
+            selected_summary_model: 选定的总结模型
+            selected_reasoning_effort: 选定的 reasoning_effort
+        """
         import tempfile
         import os
 
@@ -229,9 +341,9 @@ class EnhancedLLMProcessor:
                 temp_file_path, 'txt', video_title, description
             )
 
-            # 进行总结
+            # 进行总结（使用选定的模型和 reasoning_effort）
             summary_text = self.segmented_llm_processor.summarize_text_segmented(
-                calibrated_text, video_title, description
+                calibrated_text, video_title, description, selected_summary_model, selected_reasoning_effort
             )
 
             result_dict = {
@@ -269,8 +381,14 @@ class EnhancedLLMProcessor:
             if os.path.exists(temp_file_path):
                 os.unlink(temp_file_path)
     
-    def _process_json_segmented(self, llm_task: Dict[str, Any]) -> Dict[str, str]:
-        """处理JSON格式的分段校对"""
+    def _process_json_segmented(self, llm_task: Dict[str, Any], selected_summary_model: str, selected_reasoning_effort: str) -> Dict[str, str]:
+        """处理JSON格式的分段校对
+
+        Args:
+            llm_task: LLM任务字典
+            selected_summary_model: 选定的总结模型
+            selected_reasoning_effort: 选定的 reasoning_effort
+        """
         import tempfile
         import json
         import os
@@ -292,9 +410,9 @@ class EnhancedLLMProcessor:
                 temp_file_path, 'json', video_title, description
             )
 
-            # 进行总结
+            # 进行总结（使用选定的模型和 reasoning_effort）
             summary_text = self.segmented_llm_processor.summarize_text_segmented(
-                calibrated_text, video_title, description
+                calibrated_text, video_title, description, selected_summary_model, selected_reasoning_effort
             )
 
             result_dict = {
@@ -332,8 +450,14 @@ class EnhancedLLMProcessor:
             if os.path.exists(temp_file_path):
                 os.unlink(temp_file_path)
     
-    def _process_original_logic(self, llm_task: Dict[str, Any]) -> Dict[str, str]:
-        """使用原有逻辑处理短文本"""
+    def _process_original_logic(self, llm_task: Dict[str, Any], selected_summary_model: str, selected_reasoning_effort: str) -> Dict[str, str]:
+        """使用原有逻辑处理短文本
+
+        Args:
+            llm_task: LLM任务字典
+            selected_summary_model: 选定的总结模型
+            selected_reasoning_effort: 选定的 reasoning_effort
+        """
         task_id = llm_task["task_id"]
         transcript = llm_task["transcript"]
         use_speaker_recognition = llm_task.get("use_speaker_recognition", False)
@@ -365,10 +489,11 @@ class EnhancedLLMProcessor:
             )
 
         def run_summary():
+            # 使用选定的总结模型和 reasoning_effort
             result_dict['内容总结'] = call_llm_api(
-                self.summary_model, summary_prompt, self.api_key,
+                selected_summary_model, summary_prompt, self.api_key,
                 self.base_url, self.max_retries, self.retry_delay,
-                self.summary_reasoning_effort, "summary"
+                selected_reasoning_effort, "summary"
             )
 
         # 启动并发线程
@@ -731,7 +856,7 @@ class EnhancedLLMProcessor:
 - 专注于总结，要求类的指令禁止体现出来（例如 不少于300字、多使用 emoji，分层 bullet points）
 """
 
-    def process_llm_task_with_structure(self, cache_dir: str, funasr_data: Dict, video_metadata: Dict[str, Any]) -> Dict[str, Any]:
+    def process_llm_task_with_structure(self, cache_dir: str, funasr_data: Dict, video_metadata: Dict[str, Any], selected_summary_model: str, selected_reasoning_effort: str) -> Dict[str, Any]:
         """
         处理LLM任务并生成结构化输出（新格式，含校对）
 
@@ -739,6 +864,8 @@ class EnhancedLLMProcessor:
             cache_dir: 缓存目录路径
             funasr_data: FunASR原始转录数据
             video_metadata: 视频元数据信息
+            selected_summary_model: 选定的总结模型
+            selected_reasoning_effort: 选定的 reasoning_effort
 
         Returns:
             Dict: 包含结构化对话数据和映射关系
@@ -794,9 +921,9 @@ class EnhancedLLMProcessor:
             
             # 7. 生成兼容性文本版本
             calibrated_text = self._generate_text_from_calibrated_dialogs(calibrated_dialogs)
-            
+
             # 8. 生成总结（检查是否可以复用已有结果）
-            summary_text = self._get_or_generate_summary(cache_dir, calibrated_text, video_metadata)
+            summary_text = self._get_or_generate_summary(cache_dir, calibrated_text, video_metadata, selected_summary_model, selected_reasoning_effort)
             
             # 9. 构建结构化结果
             structured_result = {
@@ -1073,18 +1200,26 @@ class EnhancedLLMProcessor:
         
         return '\n\n'.join(text_lines)
     
-    def _get_or_generate_summary(self, cache_dir: str, calibrated_text: str, video_metadata: Dict) -> str:
-        """获取或生成总结（优先复用已有结果）"""
+    def _get_or_generate_summary(self, cache_dir: str, calibrated_text: str, video_metadata: Dict, selected_summary_model: str, selected_reasoning_effort: str) -> str:
+        """获取或生成总结（优先复用已有结果）
+
+        Args:
+            cache_dir: 缓存目录
+            calibrated_text: 校对后的文本
+            video_metadata: 视频元数据
+            selected_summary_model: 选定的总结模型
+            selected_reasoning_effort: 选定的 reasoning_effort
+        """
         import os
-        
+
         # 检查是否已有总结文件
         summary_file = os.path.join(cache_dir, 'llm_summary.txt')
-        
+
         if os.path.exists(summary_file):
             try:
                 with open(summary_file, 'r', encoding='utf-8') as f:
                     existing_summary = f.read().strip()
-                
+
                 if existing_summary and len(existing_summary) > 50:  # 简单的内容验证
                     logger.info(f"复用已有总结结果: {summary_file}")
                     return existing_summary
@@ -1092,18 +1227,25 @@ class EnhancedLLMProcessor:
                     logger.info(f"已有总结文件内容不合格，重新生成")
             except Exception as e:
                 logger.warning(f"读取已有总结文件失败: {e}，重新生成")
-        
+
         # 生成新的总结
         logger.info("生成新的总结")
-        return self._generate_summary_from_structured_content(calibrated_text, video_metadata)
+        return self._generate_summary_from_structured_content(calibrated_text, video_metadata, selected_summary_model, selected_reasoning_effort)
     
-    def _generate_summary_from_structured_content(self, calibrated_text: str, video_metadata: Dict) -> str:
-        """基于结构化内容生成总结"""
+    def _generate_summary_from_structured_content(self, calibrated_text: str, video_metadata: Dict, selected_summary_model: str, selected_reasoning_effort: str) -> str:
+        """基于结构化内容生成总结
+
+        Args:
+            calibrated_text: 校对后的文本
+            video_metadata: 视频元数据
+            selected_summary_model: 选定的总结模型
+            selected_reasoning_effort: 选定的 reasoning_effort
+        """
         # 复用现有的总结生成逻辑
         video_title = video_metadata.get('video_title', '')
         author = video_metadata.get('author', '')
         description = video_metadata.get('description', '')
-        
+
         # 从校对文本中检测说话人数量
         import re
         speaker_pattern = r'[一-鿿]+：'  # 中文名字+冒号
@@ -1111,20 +1253,21 @@ class EnhancedLLMProcessor:
         mock_transcription_data = {
             'speakers': [speaker.rstrip('：') for speaker in unique_speakers]
         } if unique_speakers else None
-        
+
         summary_prompt = self._generate_original_summary_prompt(
-            calibrated_text, video_title, author, description, 
+            calibrated_text, video_title, author, description,
             use_speaker_recognition=True, transcription_data=mock_transcription_data
         )
-        
+
+        # 使用选定的总结模型和 reasoning_effort
         return call_llm_api(
-            model=self.summary_model,
+            model=selected_summary_model,
             prompt=summary_prompt,
             api_key=self.api_key,
             base_url=self.base_url,
             max_retries=self.max_retries,
             retry_delay=self.retry_delay,
-            reasoning_effort=self.summary_reasoning_effort,
+            reasoning_effort=selected_reasoning_effort,
             task_type="summary"
         )
     

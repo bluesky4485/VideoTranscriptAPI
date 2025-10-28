@@ -58,6 +58,9 @@
       "calibrate_reasoning_effort": null,
       "summary_model": "deepseek-chat",
       "summary_reasoning_effort": "high",
+      "risk_summary_model": "gpt-4o-mini",
+      "risk_summary_reasoning_effort": "medium",
+      "enable_risk_model_selection": false,
       "max_retries": 2,
       "retry_delay": 5,
       "segmentation": {
