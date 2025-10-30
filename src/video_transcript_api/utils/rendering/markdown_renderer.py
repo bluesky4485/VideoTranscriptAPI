@@ -59,17 +59,83 @@ def _fix_indented_tables(text: str) -> str:
 
     return '\n'.join(fixed_lines)
 
+def _detect_list_indent_style(text: str) -> int:
+    """
+    检测文档使用的列表缩进风格（2空格 或 4空格）
+
+    通过统计所有列表项的缩进值，计算最大公约数来判断基础缩进单位。
+
+    Args:
+        text: 原始文本
+
+    Returns:
+        int: 检测到的缩进单位（2 或 4），默认返回 4
+    """
+    from math import gcd
+    from functools import reduce
+
+    lines = text.split('\n')
+    indents = []
+    in_code_block = False
+
+    for line in lines:
+        # 跟踪代码块状态
+        if line.strip().startswith('```'):
+            in_code_block = not in_code_block
+            continue
+
+        if in_code_block:
+            continue
+
+        # 检测列表项
+        match = re.match(r'^(\s*)([\*\-\+]|\d+\.)(\s+)', line)
+        if match:
+            indent_count = len(match.group(1))
+            if indent_count > 0:  # 只记录有缩进的项
+                indents.append(indent_count)
+
+    # 如果没有找到任何缩进列表项，返回默认值 4
+    if not indents:
+        return 4
+
+    # 计算所有缩进的最大公约数
+    indent_gcd = reduce(gcd, indents)
+
+    # 根据 GCD 判断缩进风格
+    if indent_gcd == 2:
+        logger.debug(f"检测到 2 空格缩进风格，缩进值集合: {set(indents)}")
+        return 2
+    elif indent_gcd >= 4:
+        logger.debug(f"检测到 4 空格缩进风格，缩进值集合: {set(indents)}")
+        return 4
+    else:
+        # 不规则缩进（如 GCD=1, 3 等），采用启发式：看主流值
+        # 统计 2 的倍数和 4 的倍数的数量
+        count_2x = sum(1 for i in indents if i % 2 == 0 and i % 4 != 0)
+        count_4x = sum(1 for i in indents if i % 4 == 0)
+
+        if count_2x > count_4x:
+            logger.debug(f"检测到混合缩进，倾向 2 空格风格 (2x:{count_2x}, 4x:{count_4x})")
+            return 2
+        else:
+            logger.debug(f"检测到混合缩进，倾向 4 空格风格 (2x:{count_2x}, 4x:{count_4x})")
+            return 4
+
+
 def _fix_nested_list_indentation(text: str) -> str:
     """
-    修复嵌套列表的缩进问题
+    智能修复嵌套列表的缩进问题
 
-    Markdown 标准要求嵌套列表需要 4 个空格的缩进，但有些文档使用 2 个空格。
-    本函数将 2 个空格缩进的列表项转换为 4 个空格缩进。
+    本函数会自动检测文档使用的缩进风格（2 空格或 4 空格），
+    并统一规范化为 Markdown 标准的 4 空格缩进。
 
-    缩进转换规则：
-    - 2空格 → 4空格（第2级）
-    - 4空格 → 8空格（第3级）
-    - 6空格 → 12空格（第4级）
+    处理逻辑：
+    1. 检测缩进风格（通过计算缩进值的最大公约数）
+    2. 如果是 2 空格体系：所有缩进 × 2 (2→4, 4→8, 6→12...)
+    3. 如果是 4 空格体系：保持不变
+    4. 如果是混合/不规则：智能对齐到最近的 4 倍数
+
+    支持的列表标记：*, -, +, 1., 2. 等
 
     Args:
         text: 原始文本
@@ -77,6 +143,9 @@ def _fix_nested_list_indentation(text: str) -> str:
     Returns:
         str: 修复后的文本
     """
+    # 步骤 1：检测缩进风格
+    base_indent = _detect_list_indent_style(text)
+
     lines = text.split('\n')
     fixed_lines = []
     in_code_block = False
@@ -92,31 +161,47 @@ def _fix_nested_list_indentation(text: str) -> str:
             continue
 
         # 检测列表项的缩进级别
-        # 匹配：(空格) + (*, -, + 或数字.) + 空格
-        match = re.match(r'^(\s*)([\*\-\+]|\d+\.)(\s+)', line)
+        # 匹配：(空格/Tab) + (*, -, + 或数字.) + 空格
+        match = re.match(r'^([ \t]*)([\*\-\+]|\d+\.)(\s+)', line)
 
         if match:
-            indent = match.group(1)  # 前导空格
-            marker = match.group(2)   # 列表标记
+            raw_indent = match.group(1)  # 前导空格/Tab
+            marker = match.group(2)       # 列表标记
             space_after = match.group(3)  # 标记后的空格
-            content = line[len(indent) + len(marker) + len(space_after):]  # 实际内容
+            content = line[len(raw_indent) + len(marker) + len(space_after):]  # 实际内容
 
-            # 计算缩进空格数
-            indent_count = len(indent)
+            # 将 Tab 转换为 4 个空格
+            indent_str = raw_indent.replace('\t', '    ')
+            indent_count = len(indent_str)
 
-            # 将所有偶数空格缩进乘以2，确保足够的层级区分
-            # 2 → 4, 4 → 8, 6 → 12, 8 → 16
-            if indent_count > 0 and indent_count % 2 == 0:
-                # 计算嵌套级别（每2个空格为一级）
+            # 步骤 2：根据检测到的风格进行转换
+            if indent_count == 0:
+                # 顶级列表，不需要转换
+                fixed_lines.append(line)
+            elif base_indent == 2:
+                # 2 空格体系：所有缩进 × 2
                 level = indent_count // 2
-                # 每级使用4个空格
                 new_indent = ' ' * (level * 4)
                 fixed_line = f"{new_indent}{marker}{space_after}{content}"
                 fixed_lines.append(fixed_line)
-                logger.debug(f"修正列表缩进: {indent_count} 空格 → {level * 4} 空格")
+                logger.debug(f"修正列表缩进 (2空格风格): {indent_count} 空格 → {level * 4} 空格")
+            elif base_indent == 4:
+                # 4 空格体系：保持不变（但修正不规则缩进）
+                if indent_count % 4 == 0:
+                    # 已经是标准缩进，保持不变
+                    fixed_lines.append(line)
+                else:
+                    # 不规则缩进，向上对齐到最近的 4 倍数
+                    level = (indent_count + 3) // 4  # 向上取整
+                    new_indent = ' ' * (level * 4)
+                    fixed_line = f"{new_indent}{marker}{space_after}{content}"
+                    fixed_lines.append(fixed_line)
+                    logger.debug(f"修正不规则列表缩进 (4空格风格): {indent_count} 空格 → {level * 4} 空格")
             else:
+                # 兜底：保持原样
                 fixed_lines.append(line)
         else:
+            # 非列表行，直接添加
             fixed_lines.append(line)
 
     return '\n'.join(fixed_lines)

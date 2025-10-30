@@ -715,22 +715,38 @@ class CacheManager:
     def get_task_by_view_token(self, view_token: str) -> Optional[Dict[str, Any]]:
         """
         根据view_token获取任务信息
-        
+
+        优先返回成功状态的任务，如果有多个任务则返回最新的
+
         Args:
             view_token: 查看token
-            
+
         Returns:
             Dict: 任务信息
         """
         try:
             with self._get_cursor() as cursor:
-                cursor.execute("SELECT * FROM task_status WHERE view_token = ?", (view_token,))
+                # 优先返回成功状态的任务，其次返回最新的任务
+                cursor.execute("""
+                    SELECT * FROM task_status
+                    WHERE view_token = ?
+                    ORDER BY
+                        CASE status
+                            WHEN 'success' THEN 1
+                            WHEN 'processing' THEN 2
+                            WHEN 'queued' THEN 3
+                            WHEN 'failed' THEN 4
+                            ELSE 5
+                        END,
+                        created_at DESC
+                    LIMIT 1
+                """, (view_token,))
                 row = cursor.fetchone()
-                
+
                 if row:
                     return dict(row)
                 return None
-                
+
         except Exception as e:
             logger.error(f"根据view_token获取任务信息失败: {e}")
             return None
