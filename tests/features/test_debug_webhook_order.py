@@ -71,7 +71,7 @@ def test_detailed_webhook_order():
     print("\n5. [缓存模式] 准备发送任务完成通知")
     completion_message = f"✅ 【任务完成】{title}\n\n转录和AI处理已全部完成！\n\n🔗 查看完整结果：http://example.com/view/test-token"
     
-    notifier = WechatNotifier(use_rate_limit=True)
+    notifier = WechatNotifier()  # 自动使用全局 WeComNotifier
     start_time = time.time()
     notifier.send_text(completion_message)
     elapsed = time.time() - start_time

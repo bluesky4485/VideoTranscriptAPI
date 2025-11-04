@@ -127,21 +127,13 @@ def test_wechat_notifier_integration():
     
     webhook = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=notifier_test"
     
-    # 测试启用限流的通知器
-    notifier_with_limit = WechatNotifier(webhook, use_rate_limit=True)
-    print("使用限流通知器发送3条消息...")
-    
-    for i in range(3):
-        success = notifier_with_limit.send_text(f"限流通知器测试消息 {i+1}")
-        print(f"限流消息 {i+1}: {'✓' if success else '✗'}")
-    
-    # 测试禁用限流的通知器
-    notifier_no_limit = WechatNotifier(webhook, use_rate_limit=False)
-    print("使用非限流通知器发送3条消息...")
-    
-    for i in range(3):
-        success = notifier_no_limit.send_text(f"非限流通知器测试消息 {i+1}")
-        print(f"非限流消息 {i+1}: {'✓' if success else '✗'}")
+    # 测试通知器（现在所有通知器都自动使用频率控制）
+    notifier = WechatNotifier(webhook)
+    print("使用通知器发送6条消息（自动频率控制）...")
+
+    for i in range(6):
+        success = notifier.send_text(f"通知器测试消息 {i+1}")
+        print(f"消息 {i+1}: {'✓' if success else '✗'}")
     
     # 查看状态
     time.sleep(1)

@@ -248,11 +248,61 @@ pip install -r requirements.txt
 python main.py --start
 ```
 
-### 开发提示（企业微信通知）
-- 项目使用外部包 `wecom-notifier` 的限流与分段能力，要求全局仅一个 `WeComNotifier` 实例。
-- 应用已在启动时初始化全局实例。包内代码使用通知功能时，请依赖新的子包导入路径，避免同一模块以不同名称被加载两次导致单例失效：
-  - 正确：`from video_transcript_api.utils.notifications import send_long_text_wechat` 或 `from ..utils.notifications import WechatNotifier`
-  - 避免：`from utils.wechat import ...`
+### 企业微信通知最佳实践
+
+本项目使用 [`wecom-notifier`](docs/api/企微通知器-USAGE_GUIDE.md) 库实现企业微信通知功能。为确保频率控制和消息顺序的正确性，项目遵循以下最佳实践：
+
+#### ✅ 全局单例模式
+
+**核心原则**：整个应用只使用一个 `WeComNotifier` 实例，所有通知共享此实例。
+
+**实现方式**：
+1. **API 服务器启动时自动初始化**：在 `server.py` 的 `startup_event` 中调用 `init_global_notifier()`
+2. **API 服务器关闭时自动清理**：在 `server.py` 的 `shutdown_event` 中调用 `shutdown_global_notifier()`
+3. **测试环境自动管理**：在 `tests/conftest.py` 中为测试会话管理全局实例
+
+#### 📝 代码使用规范
+
+**正确的导入路径**（避免模块重复加载导致单例失效）：
+```python
+# ✅ 推荐：使用完整的包路径
+from video_transcript_api.utils.notifications import WechatNotifier, send_long_text_wechat
+
+# ✅ 或使用相对导入
+from ..utils.notifications import WechatNotifier
+
+# ❌ 避免：不完整的路径
+from utils.wechat import WechatNotifier
+```
+
+**创建通知器实例**：
+```python
+# 创建实例时，自动使用全局共享的 WeComNotifier
+notifier = WechatNotifier()  # 或传入自定义 webhook
+notifier.send_text("消息内容")
+```
+
+#### 🧪 测试环境配置
+
+测试框架已在 `tests/conftest.py` 中统一管理全局实例：
+- 所有测试共享同一个 `WeComNotifier` 实例
+- 测试会话开始时自动初始化，结束时自动清理
+- 无需在单个测试文件中重复初始化
+
+#### 🔍 为什么需要单例？
+
+每个 `WeComNotifier` 实例会为每个 webhook 创建独立的：
+- 工作线程（处理消息队列）
+- 频率控制器（20条/分钟）
+
+如果创建多个实例：
+- ❌ 无法协调频率限制，容易触发服务端频控（45009错误）
+- ❌ 多个线程并发发送，消息顺序无法保证
+- ❌ 资源浪费（每个实例一个线程）
+
+#### 📖 更多信息
+
+详细文档请参考：[企微通知器使用指南](docs/api/企微通知器-USAGE_GUIDE.md)
 
 ### API使用示例
 

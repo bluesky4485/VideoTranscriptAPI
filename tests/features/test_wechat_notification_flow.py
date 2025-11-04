@@ -80,8 +80,8 @@ def test_notification_flow():
 
     print(f"\n[Step 4] Using webhook: {webhook[:50]}...")
 
-    # 创建通知器
-    notifier = WechatNotifier(webhook, use_rate_limit=True)
+    # 创建通知器（自动使用全局 WeComNotifier，已内置频率控制）
+    notifier = WechatNotifier(webhook)
 
     print("\n" + "=" * 80)
     print("Starting notification sequence...")

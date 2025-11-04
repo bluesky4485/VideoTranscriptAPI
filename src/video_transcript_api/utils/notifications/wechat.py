@@ -17,13 +17,16 @@ def init_global_notifier():
 
     应在应用启动时调用一次，确保所有通知共享同一个实例，
     从而实现正确的并发控制和消息顺序保证。
+
+    如果已初始化，则静默跳过（幂等操作）。
     """
     global _global_wecom_notifier
     if _global_wecom_notifier is None:
         _global_wecom_notifier = WeComNotifier()
         logger.info("全局 WeComNotifier 实例已初始化")
     else:
-        logger.warning("全局 WeComNotifier 已存在，跳过重复初始化")
+        # 已初始化，静默跳过（幂等操作，不输出警告）
+        logger.debug("全局 WeComNotifier 已存在，跳过重复初始化")
 
 def shutdown_global_notifier():
     """

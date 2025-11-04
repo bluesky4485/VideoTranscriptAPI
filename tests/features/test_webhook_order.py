@@ -68,21 +68,19 @@ def test_webhook_message_order():
             title=title,
             url=url,
             text=calibrated_text,
-            is_summary=False,
-            use_rate_limit=True
+            is_summary=False
         )
-        
+
         print(f"\n2. 发送总结文本 ({len(summary_text)} 字符)")
         send_long_text_wechat(
             title=title,
             url=url,
             text=summary_text,
-            is_summary=True,
-            use_rate_limit=True
+            is_summary=True
         )
-        
+
         print(f"\n3. 发送完成通知")
-        notifier = WechatNotifier(use_rate_limit=True)
+        notifier = WechatNotifier()  # 自动使用全局 WeComNotifier
         notifier.send_text(completion_message)
         
         # 等待所有消息发送完成
