@@ -466,16 +466,15 @@ class EnhancedLLMProcessor:
         description = llm_task.get("description", "")
         transcription_data = llm_task.get("transcription_data")
 
-        logger.info(f"使用原有逻辑处理短文本: {task_id}")
+        # 检查文本长度
+        original_length = len(transcript)
+        min_summary_threshold = self.llm_config.get('min_summary_threshold', 500)
+
+        logger.info(f"使用原有逻辑处理文本: {task_id}, 文本长度: {original_length}, 阈值: {min_summary_threshold}")
 
         # 生成校对提示词
         calibrate_prompt = self._generate_original_calibrate_prompt(
             transcript, video_title, author, description, use_speaker_recognition
-        )
-
-        # 生成总结提示词
-        summary_prompt = self._generate_original_summary_prompt(
-            transcript, video_title, author, description, use_speaker_recognition, transcription_data
         )
 
         # 并发调用LLM API
@@ -489,6 +488,10 @@ class EnhancedLLMProcessor:
             )
 
         def run_summary():
+            # 生成总结提示词
+            summary_prompt = self._generate_original_summary_prompt(
+                transcript, video_title, author, description, use_speaker_recognition, transcription_data
+            )
             # 使用选定的总结模型和 reasoning_effort
             result_dict['内容总结'] = call_llm_api(
                 selected_summary_model, summary_prompt, self.api_key,
@@ -496,13 +499,25 @@ class EnhancedLLMProcessor:
                 selected_reasoning_effort, "summary"
             )
 
-        # 启动并发线程
+        # 启动校对线程
         t1 = threading.Thread(target=run_calibrate)
-        t2 = threading.Thread(target=run_summary)
         t1.start()
-        t2.start()
-        t1.join()
-        t2.join()
+
+        # 判断是否需要总结
+        if original_length >= min_summary_threshold:
+            # 文本足够长，执行总结
+            t2 = threading.Thread(target=run_summary)
+            t2.start()
+            t1.join()
+            t2.join()
+            skip_summary = False
+            logger.info(f"文本长度 {original_length} >= {min_summary_threshold}，执行总结")
+        else:
+            # 文本太短，跳过总结
+            t1.join()
+            result_dict['内容总结'] = None
+            skip_summary = True
+            logger.info(f"文本长度 {original_length} < {min_summary_threshold}，跳过总结")
 
         # 处理校对失败的情况：在错误信息后附加原始转录文本
         if result_dict.get('校对文本', '').startswith('【LLM call failed】'):
@@ -517,7 +532,7 @@ class EnhancedLLMProcessor:
             )
 
         # 处理总结失败的情况：在错误信息后附加原始转录文本
-        if result_dict.get('内容总结', '').startswith('【LLM call failed】'):
+        if result_dict.get('内容总结') and result_dict.get('内容总结', '').startswith('【LLM call failed】'):
             logger.warning(f"总结失败，附加原始转录文本: {task_id}")
             formatted_transcript = self._format_transcript_for_display(transcript)
             result_dict['内容总结'] = (
@@ -527,6 +542,20 @@ class EnhancedLLMProcessor:
                 f"{'='*60}\n\n"
                 f"{formatted_transcript}"
             )
+
+        # 计算统计信息
+        calibrated_text = result_dict.get('校对文本', '')
+        calibrated_length = len(calibrated_text)
+        summary_text = result_dict.get('内容总结')
+        summary_length = len(summary_text) if summary_text else None
+
+        # 添加统计信息到返回字典
+        result_dict['skip_summary'] = skip_summary
+        result_dict['stats'] = {
+            'original_length': original_length,
+            'calibrated_length': calibrated_length,
+            'summary_length': summary_length
+        }
 
         return result_dict
     

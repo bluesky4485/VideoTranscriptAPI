@@ -63,6 +63,7 @@
       "enable_risk_model_selection": false,
       "max_retries": 2,
       "retry_delay": 5,
+      "min_summary_threshold": 500,
       "segmentation": {
         "enable_threshold": 20000,
         "segment_size": 8000,

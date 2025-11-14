@@ -854,7 +854,13 @@ def process_llm_queue():
                     result_dict = enhanced_llm_processor.process_llm_task(llm_task)
                     
                     logger.info(f"LLM处理完成，开始保存结果和发送微信通知: {task_id}")
-                    
+
+                    # 提取结果和统计信息
+                    calibrated_text = result_dict.get('校对文本', '')
+                    summary_text = result_dict.get('内容总结')
+                    skip_summary = result_dict.get('skip_summary', False)
+                    stats = result_dict.get('stats', {})
+
                     # 保存校对文本到缓存
                     if platform and media_id:
                         cache_manager.save_llm_result(
@@ -862,26 +868,49 @@ def process_llm_queue():
                             media_id=media_id,
                             use_speaker_recognition=use_speaker_recognition,
                             llm_type="calibrated",
-                            content=result_dict['校对文本']
+                            content=calibrated_text
                         )
-                        
+
                         # 保存总结文本到缓存
+                        # 短文本：保存校对文本作为总结
+                        # 长文本：保存实际总结
+                        if skip_summary:
+                            summary_content = calibrated_text
+                            logger.info(f"文本过短，保存校对文本作为总结: {task_id}")
+                        else:
+                            summary_content = summary_text
+                            logger.info(f"保存LLM总结到缓存: {task_id}")
+
                         cache_manager.save_llm_result(
                             platform=platform,
                             media_id=media_id,
                             use_speaker_recognition=use_speaker_recognition,
                             llm_type="summary",
-                            content=result_dict['内容总结']
+                            content=summary_content
                         )
                         logger.info(f"LLM结果已保存到缓存: {platform}/{media_id}")
-                    
-                    # 只发送总结文本（不再发送校对文本）
-                    logger.info("发送总结文本")
+
+                    # 构建统计信息文本
+                    original_length = stats.get('original_length', 0)
+                    calibrated_length = stats.get('calibrated_length', 0)
+                    summary_length = stats.get('summary_length')
+
+                    if skip_summary:
+                        stats_line = f"## 转录统计\n原始 {original_length:,} 字 | 校对 {calibrated_length:,} 字 | 总结 未生成\n\n## 校对文本\n"
+                        content_to_send = calibrated_text
+                        logger.info(f"发送校对文本（文本过短，未总结）: {task_id}")
+                    else:
+                        stats_line = f"## 转录统计\n原始 {original_length:,} 字 | 校对 {calibrated_length:,} 字 | 总结 {summary_length:,} 字\n\n## 总结\n"
+                        content_to_send = summary_text
+                        logger.info(f"发送总结文本: {task_id}")
+
+                    # 发送带统计信息的内容
+                    full_message = stats_line + content_to_send
                     send_long_text_wechat(
                         title=video_title,
                         url=url,
-                        text=result_dict['内容总结'],
-                        is_summary=True,
+                        text=full_message,
+                        is_summary=not skip_summary,
                         has_speaker_recognition=use_speaker_recognition,
                         webhook=wechat_webhook
                     )
