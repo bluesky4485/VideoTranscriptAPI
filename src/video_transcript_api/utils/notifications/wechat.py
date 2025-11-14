@@ -405,7 +405,7 @@ def wechat_notify(message, webhook=None, config=None):
     notifier = WechatNotifier(webhook)
     return notifier.send_text(message)
 
-def send_long_text_wechat(title, url, text, is_summary=False, webhook=None, has_speaker_recognition=False, use_rate_limit=True):
+def send_long_text_wechat(title, url, text, is_summary=False, webhook=None, has_speaker_recognition=False, use_rate_limit=True, skip_content_type_header=False):
     """
     发送长文本到企业微信，使用 wecom-notifier 自动处理分段
 
@@ -417,6 +417,7 @@ def send_long_text_wechat(title, url, text, is_summary=False, webhook=None, has_
         webhook: 自定义webhook地址
         has_speaker_recognition: 是否包含说话人识别
         use_rate_limit: 是否启用限流（已废弃，保留仅为兼容性）
+        skip_content_type_header: 是否跳过自动添加的内容类型标题（默认False）
     """
     if not text or not text.strip():
         logger.warning("文本内容为空，跳过发送")
@@ -433,10 +434,20 @@ def send_long_text_wechat(title, url, text, is_summary=False, webhook=None, has_
     safe_text = notifier._apply_risk_control_safe(text, text_type=text_type)
 
     # 3. 构建消息（简化版，不需要手动分段）
-    content_type = '**总结文本**' if is_summary else '**校对文本**'
-    speaker_info = '（含说话人识别）' if has_speaker_recognition else ''
+    if skip_content_type_header:
+        # 跳过内容类型标题，直接使用传入的文本（文本中已包含格式化的标题）
+        message = f"""## {safe_title}
 
-    message = f"""## {safe_title}
+{clean_url}
+
+{safe_text}
+"""
+    else:
+        # 传统模式：自动添加内容类型标题
+        content_type = '**总结文本**' if is_summary else '**校对文本**'
+        speaker_info = '（含说话人识别）' if has_speaker_recognition else ''
+
+        message = f"""## {safe_title}
 
 {clean_url}
 

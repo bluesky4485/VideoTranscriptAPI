@@ -355,14 +355,46 @@ def process_transcription(task_id, url, use_speaker_recognition=False, wechat_we
                 from ..utils.notifications import send_long_text_wechat
 
                 logger.info("缓存模式 - 发送总结文本")
-                # 只发送总结文本（确保使用限流）
+
+                # 计算统计信息
+                original_length = len(transcript)
+                calibrated_length = len(cache_data.get('llm_calibrated', ''))
+                summary_text = cache_data['llm_summary']
+                calibrated_text = cache_data.get('llm_calibrated', '')
+
+                # 判断是否跳过了总结（总结文本和校对文本相同）
+                skip_summary = (summary_text == calibrated_text)
+
+                # 构建完整的消息格式
+                if skip_summary:
+                    # 短文本，未生成总结
+                    speaker_info = "（含说话人识别）" if has_speaker_recognition else ""
+                    full_message = f"""## 转录统计
+原始 {original_length:,} 字 | 校对 {calibrated_length:,} 字 | 总结 未生成
+
+## 校对文本{speaker_info}
+{summary_text}"""
+                    logger.info(f"缓存模式 - 发送校对文本（未总结）")
+                else:
+                    # 长文本，有总结
+                    summary_length = len(summary_text)
+                    speaker_info = "（含说话人识别）" if has_speaker_recognition else ""
+                    full_message = f"""## 转录统计
+原始 {original_length:,} 字 | 校对 {calibrated_length:,} 字 | 总结 {summary_length:,} 字
+
+## 总结{speaker_info}
+{summary_text}"""
+                    logger.info(f"缓存模式 - 发送总结文本")
+
+                # 发送（跳过自动添加的内容类型标题）
                 send_long_text_wechat(
                     title=video_title,
                     url=url,
-                    text=cache_data['llm_summary'],
-                    is_summary=True,
+                    text=full_message,
+                    is_summary=not skip_summary,
                     has_speaker_recognition=has_speaker_recognition,
-                    webhook=wechat_webhook
+                    webhook=wechat_webhook,
+                    skip_content_type_header=True
                 )
 
                 # 确保总结文本完全加入队列后再发送完成通知
@@ -895,24 +927,35 @@ def process_llm_queue():
                     calibrated_length = stats.get('calibrated_length', 0)
                     summary_length = stats.get('summary_length')
 
+                    # 构建完整的消息格式
+                    speaker_info = "（含说话人识别）" if use_speaker_recognition else ""
+
                     if skip_summary:
-                        stats_line = f"## 转录统计\n原始 {original_length:,} 字 | 校对 {calibrated_length:,} 字 | 总结 未生成\n\n## 校对文本\n"
-                        content_to_send = calibrated_text
+                        # 短文本，未生成总结
+                        full_message = f"""## 转录统计
+原始 {original_length:,} 字 | 校对 {calibrated_length:,} 字 | 总结 未生成
+
+## 校对文本{speaker_info}
+{calibrated_text}"""
                         logger.info(f"发送校对文本（文本过短，未总结）: {task_id}")
                     else:
-                        stats_line = f"## 转录统计\n原始 {original_length:,} 字 | 校对 {calibrated_length:,} 字 | 总结 {summary_length:,} 字\n\n## 总结\n"
-                        content_to_send = summary_text
+                        # 长文本，有总结
+                        full_message = f"""## 转录统计
+原始 {original_length:,} 字 | 校对 {calibrated_length:,} 字 | 总结 {summary_length:,} 字
+
+## 总结{speaker_info}
+{summary_text}"""
                         logger.info(f"发送总结文本: {task_id}")
 
-                    # 发送带统计信息的内容
-                    full_message = stats_line + content_to_send
+                    # 发送（跳过自动添加的内容类型标题）
                     send_long_text_wechat(
                         title=video_title,
                         url=url,
                         text=full_message,
                         is_summary=not skip_summary,
                         has_speaker_recognition=use_speaker_recognition,
-                        webhook=wechat_webhook
+                        webhook=wechat_webhook,
+                        skip_content_type_header=True
                     )
 
                     # 确保总结文本完全加入队列后再发送完成通知
