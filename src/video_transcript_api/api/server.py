@@ -925,7 +925,7 @@ def process_llm_queue():
                     # 构建统计信息文本
                     original_length = stats.get('original_length', 0)
                     calibrated_length = stats.get('calibrated_length', 0)
-                    summary_length = stats.get('summary_length')
+                    summary_length = stats.get('summary_length', 0)
 
                     # 构建完整的消息格式
                     speaker_info = "（含说话人识别）" if use_speaker_recognition else ""
