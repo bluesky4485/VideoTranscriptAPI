@@ -378,7 +378,8 @@ def process_transcription(task_id, url, use_speaker_recognition=False, wechat_we
                     # 短文本，未生成总结
                     speaker_info = "（含说话人识别）" if has_speaker_recognition else ""
                     full_message = f"""## 总结和校对
-{view_url}
+🌐 网页查看：{view_url}
+📄 直接获取：{view_url}?raw=calibrated
 
 ## 转录统计
 原始 {original_length:,} 字 | 校对 {calibrated_length:,} 字 | 总结 未生成
@@ -391,7 +392,8 @@ def process_transcription(task_id, url, use_speaker_recognition=False, wechat_we
                     summary_length = len(summary_text)
                     speaker_info = "（含说话人识别）" if has_speaker_recognition else ""
                     full_message = f"""## 总结和校对
-{view_url}
+🌐 网页查看：{view_url}
+📄 直接获取：{view_url}?raw=calibrated
 
 ## 转录统计
 原始 {original_length:,} 字 | 校对 {calibrated_length:,} 字 | 总结 {summary_length:,} 字
@@ -955,7 +957,8 @@ def process_llm_queue():
                     if skip_summary:
                         # 短文本，未生成总结
                         full_message = f"""## 总结和校对
-{view_url}
+🌐 网页查看：{view_url}
+📄 直接获取：{view_url}?raw=calibrated
 
 ## 转录统计
 原始 {original_length:,} 字 | 校对 {calibrated_length:,} 字 | 总结 未生成
@@ -966,7 +969,8 @@ def process_llm_queue():
                     else:
                         # 长文本，有总结
                         full_message = f"""## 总结和校对
-{view_url}
+🌐 网页查看：{view_url}
+📄 直接获取：{view_url}?raw=calibrated
 
 ## 转录统计
 原始 {original_length:,} 字 | 校对 {calibrated_length:,} 字 | 总结 {summary_length:,} 字
