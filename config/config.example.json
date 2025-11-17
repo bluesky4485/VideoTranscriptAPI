@@ -19,7 +19,8 @@
     },
     "concurrent": {
       "max_workers": 3,
-      "queue_size": 10
+      "queue_size": 10,
+      "llm_max_workers": 10
     },
     "storage": {
       "temp_dir": "./temp",

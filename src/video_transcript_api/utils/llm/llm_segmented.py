@@ -51,8 +51,14 @@ class SegmentedLLMProcessor:
         
         logger.info(f"分段LLM处理器初始化完成，并发数: {self.concurrent_workers}")
     
-    def calibrate_text_segmented(self, file_path: str, file_type: str, 
-                                title: str = "", description: str = "") -> str:
+    def calibrate_text_segmented(
+        self,
+        file_path: str,
+        file_type: str,
+        title: str = "",
+        description: str = "",
+        speaker_mapping: Optional[Dict[str, str]] = None,
+    ) -> str:
         """
         对文本进行分段校对
         
@@ -71,7 +77,12 @@ class SegmentedLLMProcessor:
             if file_type == 'txt':
                 return self._calibrate_txt_segmented(file_path)
             elif file_type == 'json':
-                return self._calibrate_json_segmented(file_path, title, description)
+                return self._calibrate_json_segmented(
+                    file_path,
+                    title,
+                    description,
+                    speaker_mapping=speaker_mapping,
+                )
             else:
                 raise ValueError(f"不支持的文件类型: {file_type}")
         except Exception as e:
@@ -149,7 +160,13 @@ class SegmentedLLMProcessor:
         logger.info(f"TXT并发分段校对完成，最终长度: {len(final_result)} 字符")
         return final_result
     
-    def _calibrate_json_segmented(self, file_path: str, title: str, description: str) -> str:
+    def _calibrate_json_segmented(
+        self,
+        file_path: str,
+        title: str,
+        description: str,
+        speaker_mapping: Optional[Dict[str, str]] = None,
+    ) -> str:
         """
         对JSON文件进行并发分段校对
         
@@ -164,10 +181,11 @@ class SegmentedLLMProcessor:
         import concurrent.futures
         
         # 首先生成说话人映射
-        logger.info("生成全局说话人映射")
-        speaker_mapping = self.segmentation_processor.extract_speaker_mapping_from_json(
-            file_path, title, description
-        )
+        if speaker_mapping is None:
+            logger.info("生成全局说话人映射")
+            speaker_mapping = self.segmentation_processor.extract_speaker_mapping_from_json(
+                file_path, title, description
+            )
         
         # 应用说话人映射并分段
         segments = self.segmentation_processor.segment_json_content(file_path, speaker_mapping)
@@ -310,12 +328,12 @@ class SegmentedLLMProcessor:
         
         return calibrate_prompt
     
-    def summarize_text_segmented(self, calibrated_text: str, title: str = "", description: str = "", selected_summary_model: str = None, selected_reasoning_effort: str = None) -> str:
+    def summarize_text_segmented(self, text_for_summary: str, title: str = "", description: str = "", selected_summary_model: str = None, selected_reasoning_effort: str = None) -> str:
         """
-        对校对后的文本进行总结（不分段，直接发送全文）
+        对文本进行单次总结（不分段，文本可以是原始或校对结果）
 
         Args:
-            calibrated_text: 校对后的文本
+            text_for_summary: 用于总结的文本
             title: 视频标题
             description: 视频描述
             selected_summary_model: 选定的总结模型（如果为None则使用默认模型）
@@ -324,7 +342,7 @@ class SegmentedLLMProcessor:
         Returns:
             总结文本
         """
-        logger.info(f"开始文本总结，长度: {len(calibrated_text)} 字符")
+        logger.info(f"开始文本总结，长度: {len(text_for_summary)} 字符")
 
         # 如果未指定模型，使用默认模型
         if selected_summary_model is None:
@@ -335,7 +353,7 @@ class SegmentedLLMProcessor:
             selected_reasoning_effort = self.summary_reasoning_effort
 
         # 不再分段，直接对全文进行总结，让LLM有全局理解
-        return self._summarize_single_text(calibrated_text, title, description, selected_summary_model, selected_reasoning_effort)
+        return self._summarize_single_text(text_for_summary, title, description, selected_summary_model, selected_reasoning_effort)
     
     def _summarize_single_text(self, text: str, title: str, description: str, selected_summary_model: str, selected_reasoning_effort: str) -> str:
         """
