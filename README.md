@@ -26,9 +26,13 @@ video_transcript_api/
 ├── src/                          # 源代码目录
 │   ├── video_transcript_api/     # 主要包目录
 │   │   ├── __init__.py
-│   │   ├── api/                  # API服务模块
+│   │   ├── api/                  # API服务模块（FastAPI）
 │   │   │   ├── __init__.py
-│   │   │   └── server.py         # API服务实现
+│   │   │   ├── app.py            # FastAPI 应用装配、生命周期钩子
+│   │   │   ├── context.py        # 共享依赖（配置、缓存、队列、模板）
+│   │   │   ├── routes/           # REST/视图路由拆分
+│   │   │   ├── services/         # 转录/LLM 任务处理逻辑
+│   │   │   └── server.py         # CLI 启动入口（uvicorn.run）
 │   │   ├── downloaders/          # 视频下载模块
 │   │   │   ├── __init__.py
 │   │   │   ├── base.py           # 下载器基类
@@ -116,6 +120,8 @@ video_transcript_api/
 ```
 
 ## 安装与配置
+
+> **架构提示**：FastAPI 入口拆分为 `api/app.py`（装配 + 生命周期）、`api/context.py`（依赖注入）、`api/routes/*`（REST/视图）、`api/services/transcription.py`（转录/LLM 队列）。如需二次开发，请相应扩展路由或服务，避免重新堆叠到单文件 `server.py`。
 
 ### 环境要求
 
