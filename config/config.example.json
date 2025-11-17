@@ -23,7 +23,6 @@
     },
     "storage": {
       "temp_dir": "./temp",
-      "output_dir": "./output",
       "cache_dir": "./cache_dir",
       "cache_retention_days": 360
     },

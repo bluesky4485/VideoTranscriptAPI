@@ -227,7 +227,6 @@ pip install -r requirements.txt
   - `queue_size`: 队列大小
 - `storage`: 存储配置
   - `temp_dir`: 临时文件目录
-  - `output_dir`: 输出文件目录（旧版本兼容）
   - `cache_dir`: 智能缓存系统目录
   - `cache_retention_days`: 缓存保留天数（默认360天）
 - `wechat`: 企业微信配置

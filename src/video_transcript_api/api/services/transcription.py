@@ -1,7 +1,6 @@
 import asyncio
 import datetime
 import os
-import re
 import threading
 from typing import Optional, Dict, Any
 
@@ -17,7 +16,6 @@ from ..context import (
     get_llm_processing_lock,
     get_llm_queue,
     get_logger,
-    get_metadata_cache,
     get_task_queue,
     get_task_results,
     get_user_manager,
@@ -31,7 +29,6 @@ logger = get_logger()
 config = get_config()
 user_manager = get_user_manager()
 audit_logger = get_audit_logger()
-metadata_cache = get_metadata_cache()
 cache_manager = get_cache_manager()
 enhanced_llm_processor = get_enhanced_llm_processor()
 task_results = get_task_results()
@@ -39,14 +36,6 @@ task_queue = get_task_queue()
 llm_task_queue = get_llm_queue()
 llm_processing_lock = get_llm_processing_lock()
 executor = get_executor()
-
-
-def _metadata_key(platform: Optional[str], media_id: Optional[str], url: str) -> str:
-    base = f"{platform or 'unknown'}_{media_id or datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
-    base = re.sub(r"[\\\\/:*?\"<>|]", "_", base)
-    if len(base) > 120:
-        base = base[:120]
-    return base or re.sub(r"[\\\\/:*?\"<>|]", "_", url)
 
 
 class TranscribeRequest(BaseModel):
@@ -454,17 +443,6 @@ def process_transcription(task_id, url, use_speaker_recognition=False, wechat_we
                 author=author,
             )
 
-            metadata_cache.save_metadata(
-                _metadata_key(video_info.get("platform"), video_info.get("video_id"), url),
-                {
-                    "video_title": video_title,
-                    "author": author,
-                    "description": description,
-                    "platform": video_info.get("platform"),
-                    "video_id": video_info.get("video_id"),
-                    "url": url,
-                },
-            )
         return result
     except Exception as exc:
         logger.exception(f"转录处理异常: {exc}")

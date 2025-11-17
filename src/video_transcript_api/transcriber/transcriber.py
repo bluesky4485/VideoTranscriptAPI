@@ -19,19 +19,20 @@ class Transcriber:
     def __init__(self, config=None):
         """
         初始化转录器
-        
+
         参数:
             config: 配置信息，如果为None则从配置文件加载
         """
         if config is None:
             config = load_config()
-        
+
         self.config = config
-        self.output_dir = config.get("storage", {}).get("output_dir", "./data/output")
+        # 统一使用 temp_dir 作为临时转录文件目录
+        self.output_dir = config.get("storage", {}).get("temp_dir", "./temp")
         self.max_retries = config.get("capswriter", {}).get("max_retries", 3)
         self.retry_delay = config.get("capswriter", {}).get("retry_delay", 5)
-        
-        # 确保输出目录存在
+
+        # 确保临时目录存在
         ensure_dir(self.output_dir)
         
         # 设置Client_Only配置

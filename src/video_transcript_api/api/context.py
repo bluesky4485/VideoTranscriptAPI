@@ -9,7 +9,7 @@ from typing import Dict, Any
 from fastapi.templating import Jinja2Templates
 
 from ..utils.accounts import get_user_manager as _get_user_manager_impl
-from ..utils.cache import CacheManager, MetadataCache
+from ..utils.cache import CacheManager
 from ..utils.llm import EnhancedLLMProcessor
 from ..utils.logging import get_audit_logger as _get_audit_logger_impl
 from ..utils.logging import load_config as _load_config_impl
@@ -48,11 +48,6 @@ def get_user_manager():
 def get_audit_logger():
     """Audit logger singleton."""
     return _get_audit_logger_impl()
-
-
-@lru_cache
-def get_metadata_cache():
-    return MetadataCache()
 
 
 @lru_cache

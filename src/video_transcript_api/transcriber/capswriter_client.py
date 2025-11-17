@@ -371,13 +371,14 @@ class CapsWriterClient:
             Config.update_server(server_addr, server_port)
         
         # 设置其他参数（使用项目配置的默认值）
-        self.output_dir = output_dir or project_config.get("storage", {}).get("output_dir", "./data/output")
+        # 统一使用 temp_dir 作为临时转录文件目录
+        self.output_dir = output_dir or project_config.get("storage", {}).get("temp_dir", "./temp")
         self.max_retries = max_retries or project_config.get("capswriter", {}).get("max_retries", 3)
         self.retry_delay = retry_delay or project_config.get("capswriter", {}).get("retry_delay", 5)
         self.websocket = None
         self.current_task_id = None
-        
-        # 确保输出目录存在
+
+        # 确保临时目录存在
         os.makedirs(self.output_dir, exist_ok=True)
 
     def log(self, message: str, level: str = "info"):
@@ -773,8 +774,8 @@ def main():
     parser.add_argument("file", help="要转录的音视频文件路径")
     parser.add_argument("--server", help="服务器地址", default=Config.server_addr)
     parser.add_argument("--port", type=int, help="服务器端口", default=Config.server_port)
-    parser.add_argument("--output", help="输出目录", 
-                       default=project_config.get("storage", {}).get("output_dir", "./data/output"))
+    parser.add_argument("--output", help="输出目录",
+                       default=project_config.get("storage", {}).get("temp_dir", "./temp"))
     parser.add_argument("--format", choices=['txt', 'merge', 'json', 'all'], 
                        default='txt', help="输出格式")
     parser.add_argument("--retries", type=int, 
