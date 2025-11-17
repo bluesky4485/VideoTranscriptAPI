@@ -353,7 +353,7 @@ class EnhancedLLMProcessor:
                     transcript, video_title, description, selected_summary_model, selected_reasoning_effort
                 )
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
                 calib_future = executor.submit(run_calibrate)
                 summary_future = executor.submit(run_summary)
                 try:
@@ -472,7 +472,7 @@ class EnhancedLLMProcessor:
                     selected_reasoning_effort,
                 )
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
                 calib_future = executor.submit(run_calibrate)
                 summary_future = executor.submit(run_summary)
                 try:
