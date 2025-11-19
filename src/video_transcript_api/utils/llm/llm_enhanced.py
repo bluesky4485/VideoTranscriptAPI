@@ -717,7 +717,7 @@ class EnhancedLLMProcessor:
                 f"任务 {task_id} ({context}) 校对文本过短，原始 {len(original)} 字，校对 {calibrated_length} 字，"
                 f"比例 {ratio * 100:.2f}% < {min_ratio * 100:.2f}% ，回退原文"
             )
-            return original
+            return self._format_transcript_for_display(original)
         self.logger.info(
             f"任务 {task_id} ({context}) 校对文本长度满足要求：原始 {len(original)} 字，校对 {calibrated_length} 字，"
             f"占比 {ratio * 100:.2f}%"
