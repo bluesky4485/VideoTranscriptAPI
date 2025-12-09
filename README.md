@@ -564,9 +564,11 @@ python scripts/cleanup_cache.py
 python scripts/run_tests.py
 ```
 
-## 许可证
+## 🚫 开源协议 & 使用限制
+本项目基于 MIT 协议 + Commons Clause 附加条款开源，**严禁任何商业用途**：
+- ✅ 允许：非商业用途的学习、修改、分发、自用；
+- ❌ 禁止：售卖本软件、基于本软件提供付费服务、将本软件集成到商业产品中获利等一切商业行为。
 
-[License Name]
 
 ## 作者
 
