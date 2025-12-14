@@ -113,5 +113,13 @@
             "file_path": "./config/youtube_cookies.txt",
             "fallback_without_cookie": true
         }
+    },
+    "youtube_api_server": {
+        "enabled": false,
+        "base_url": "http://your-youtube-api-server:8000",
+        "api_key": "your-api-key-here",
+        "timeout": 30,
+        "poll_interval": 30,
+        "max_wait_time": 3600
     }
 }

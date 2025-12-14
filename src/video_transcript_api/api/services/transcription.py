@@ -387,6 +387,194 @@ def process_transcription(task_id, url, use_speaker_recognition=False, wechat_we
             }
         else:
             logger.info("未找到缓存，准备下载和转录")
+
+            # ========== YouTube API Server 快速路径 ==========
+            # 如果是 YouTube URL 且启用了 API Server，使用一次请求获取所有资源
+            if (downloader.__class__.__name__ == "YoutubeDownloader"
+                and hasattr(downloader, "use_api_server")
+                and downloader.use_api_server):
+
+                logger.info(f"[youtube-api] Using API Server for: {url}")
+                try:
+                    from ...downloaders.youtube_api_errors import YouTubeApiError
+
+                    # 一次 API 请求获取所有信息
+                    api_result = downloader.fetch_for_transcription(url, use_speaker_recognition)
+
+                    video_title = api_result["video_title"]
+                    author = api_result["author"]
+                    description = api_result["description"]
+                    platform = api_result["platform"]
+                    media_id = api_result["video_id"]
+
+                    if not api_result["need_transcription"]:
+                        # 有平台字幕，直接使用
+                        transcript = api_result["transcript"]
+                        logger.info(f"[youtube-api] Using platform transcript, length={len(transcript)}")
+
+                        task_notifier.notify_task_status(
+                            url,
+                            "平台字幕获取成功 - 使用 YouTube API Server",
+                            title=video_title,
+                            author=author,
+                        )
+
+                        # 保存到缓存
+                        cache_result = cache_manager.save_cache(
+                            platform=platform,
+                            url=url,
+                            media_id=media_id,
+                            use_speaker_recognition=False,
+                            transcript_data=transcript,
+                            transcript_type="capswriter",
+                            title=video_title,
+                            author=author,
+                            description=description,
+                        )
+                        if not cache_result:
+                            logger.error("[youtube-api] Failed to save transcript cache")
+
+                        # 加入 LLM 处理队列
+                        try:
+                            llm_task_queue.put({
+                                "task_id": task_id,
+                                "url": url,
+                                "platform": platform,
+                                "media_id": media_id,
+                                "video_title": video_title,
+                                "author": author,
+                                "description": description,
+                                "transcript": transcript,
+                                "use_speaker_recognition": False,
+                                "is_generic": False,
+                                "wechat_webhook": wechat_webhook,
+                            })
+                            logger.info(f"[youtube-api] LLM task queued: {task_id}")
+                        except Exception as exc:
+                            logger.exception(f"[youtube-api] Failed to queue LLM task: {exc}")
+                            task_notifier.send_text(f"【LLM任务加入队列失败】{exc}")
+
+                        cache_manager.update_task_status(
+                            task_id, "success",
+                            platform=platform, media_id=media_id,
+                            title=video_title, author=author,
+                        )
+                        return {
+                            "status": "success",
+                            "message": "使用 YouTube API Server 获取字幕成功",
+                            "data": {
+                                "video_title": video_title,
+                                "author": author,
+                                "transcript": transcript,
+                            },
+                        }
+                    else:
+                        # 需要转录，使用已下载的音频
+                        local_file = api_result["audio_path"]
+                        logger.info(f"[youtube-api] Audio downloaded, need transcription: {local_file}")
+
+                        task_notifier.notify_task_status(
+                            url,
+                            f"正在转录音视频 - {engine_info}",
+                            title=video_title,
+                            author=author,
+                        )
+
+                        # 根据是否需要说话人识别选择转录器
+                        if use_speaker_recognition:
+                            logger.info("[youtube-api] Using FunASR for transcription")
+                            funasr_client = FunASRSpeakerClient()
+                            funasr_result = funasr_client.transcribe_sync(local_file)
+                            transcript = funasr_result["formatted_text"]
+                            transcription_data = funasr_result["transcription_result"]
+
+                            cache_result = cache_manager.save_cache(
+                                platform=platform, url=url, media_id=media_id,
+                                use_speaker_recognition=True,
+                                transcript_data=transcription_data,
+                                transcript_type="funasr",
+                                title=video_title, author=author, description=description,
+                            )
+                            transcription_result = {
+                                "transcript": transcript,
+                                "speaker_recognition": True,
+                                "transcription_data": transcription_data,
+                            }
+                        else:
+                            logger.info("[youtube-api] Using CapsWriter for transcription")
+                            transcriber = Transcriber()
+                            temp_output_base = datetime.datetime.now().strftime("%y%m%d-%H%M%S")
+                            transcription_result = transcriber.transcribe(local_file, temp_output_base)
+                            transcript = transcription_result.get("transcript", "")
+
+                            cache_result = cache_manager.save_cache(
+                                platform=platform, url=url, media_id=media_id,
+                                use_speaker_recognition=False,
+                                transcript_data=transcript,
+                                transcript_type="capswriter",
+                                title=video_title, author=author, description=description,
+                            )
+
+                        if not cache_result:
+                            logger.error("[youtube-api] Failed to save transcription cache")
+
+                        task_notifier.notify_task_status(
+                            url, f"转录完成 - {engine_info}",
+                            title=video_title, author=author, transcript=transcript,
+                        )
+
+                        # 加入 LLM 处理队列
+                        try:
+                            llm_task_queue.put({
+                                "task_id": task_id,
+                                "url": url,
+                                "platform": platform,
+                                "media_id": media_id,
+                                "video_title": video_title,
+                                "author": author,
+                                "description": description,
+                                "transcript": transcript,
+                                "use_speaker_recognition": use_speaker_recognition,
+                                "transcription_data": transcription_result.get("transcription_data") if use_speaker_recognition else None,
+                                "is_generic": False,
+                                "wechat_webhook": wechat_webhook,
+                            })
+                            logger.info(f"[youtube-api] LLM task queued: {task_id}")
+                        except Exception as exc:
+                            logger.exception(f"[youtube-api] Failed to queue LLM task: {exc}")
+                            task_notifier.send_text(f"【LLM任务加入队列失败】{exc}")
+
+                        cache_manager.update_task_status(
+                            task_id, "success",
+                            platform=platform, media_id=media_id,
+                            title=video_title, author=author,
+                        )
+                        return {
+                            "status": "success",
+                            "message": "使用 YouTube API Server 下载并转录成功",
+                            "data": {
+                                "video_title": video_title,
+                                "author": author,
+                                "transcript": transcript,
+                                "speaker_recognition": use_speaker_recognition,
+                            },
+                        }
+
+                except YouTubeApiError as api_error:
+                    # API Server 失败，不降级，直接返回错误
+                    error_msg = f"YouTube API Server error: [{api_error.code}] {api_error.message}"
+                    logger.error(f"[youtube-api] {error_msg}")
+                    task_notifier.notify_task_status(url, "下载失败", error_msg)
+                    return {"status": "failed", "message": error_msg}
+
+                except Exception as exc:
+                    # 其他异常也不降级
+                    error_msg = f"YouTube API Server unexpected error: {exc}"
+                    logger.exception(f"[youtube-api] {error_msg}")
+                    task_notifier.notify_task_status(url, "下载失败", error_msg)
+                    return {"status": "failed", "message": error_msg}
+
+            # ========== 原有逻辑（非 YouTube API Server 路径）==========
             video_info = downloader.get_video_info(url)
             if not video_info:
                 raise ValueError("下载器未返回视频信息")
