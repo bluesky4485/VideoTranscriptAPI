@@ -50,7 +50,7 @@ test_output/
 tests/sample_files/test_files/
 
 # 配置文件（敏感信息）
-config/config.json
+config/config.jsonc
 config/users.json
 
 # 第三方工具输出

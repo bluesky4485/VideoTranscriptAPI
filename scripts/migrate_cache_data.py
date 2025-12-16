@@ -25,7 +25,7 @@ def get_project_root():
 
 def load_config():
     """加载配置文件"""
-    config_path = os.path.join(get_project_root(), "config", "config.json")
+    config_path = os.path.join(get_project_root(), "config", "config.jsonc")
     with open(config_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -183,8 +183,8 @@ def move_cache_files(source_dir, target_dir, logger):
 def update_config_paths(logger):
     """更新配置文件中的路径"""
     project_root = get_project_root()
-    config_path = os.path.join(project_root, "config", "config.json")
-    
+    config_path = os.path.join(project_root, "config", "config.jsonc")
+
     with open(config_path, "r", encoding="utf-8") as f:
         config = json.load(f)
     

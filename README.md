@@ -105,8 +105,8 @@ video_transcript_api/
 │   ├── architecture/             # 架构文档
 │   └── examples/                 # 示例文档
 ├── config/                       # 配置文件目录
-│   ├── config.example.json       # 配置示例文件
-│   └── config.json               # 实际配置文件
+│   ├── config.example.jsonc      # 配置示例文件（支持注释）
+│   └── config.jsonc              # 实际配置文件（支持注释）
 ├── data/                         # 数据目录
 │   ├── cache/                    # 缓存数据
 │   ├── logs/                     # 日志文件
@@ -183,7 +183,7 @@ chmod +x BBDown/BBDown
 
 6. 修改配置文件
 
-编辑`config/config.json`配置文件，设置相关参数：
+编辑`config/config.jsonc`配置文件，设置相关参数（支持 `//` 注释）：
 
 ```json
 {

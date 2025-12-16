@@ -1,8 +1,12 @@
 import os
-import json
 import sys
 from pathlib import Path
 from loguru import logger
+
+try:
+    import commentjson as json  # 支持 JSONC 格式（带注释的 JSON）
+except ImportError:
+    import json  # 降级使用标准 json（不支持注释）
 
 # 全局变量，标记logger是否已经配置
 _logger_configured = False
@@ -23,7 +27,7 @@ def load_config():
     # 获取项目根目录下的配置文件路径
     current_file = Path(__file__).resolve()
     project_root = current_file.parents[4]
-    config_path = project_root / "config" / "config.json"
+    config_path = project_root / "config" / "config.jsonc"
 
     with config_path.open("r", encoding="utf-8") as f:
         _config_cache = json.load(f)
