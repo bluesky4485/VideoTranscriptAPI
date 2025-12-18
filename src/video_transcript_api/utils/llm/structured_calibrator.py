@@ -10,7 +10,8 @@ from concurrent.futures import ThreadPoolExecutor
 import concurrent.futures
 
 from ..logging import setup_logger
-from .llm import call_llm_api
+from .llm import call_llm_api, StructuredResult
+from .schemas import CALIBRATION_RESULT_SCHEMA, VALIDATION_RESULT_SCHEMA
 
 logger = setup_logger(__name__)
 
@@ -324,12 +325,12 @@ class StructuredCalibrator:
         
         # 生成校对prompt
         prompt = self._generate_calibration_prompt(input_data, video_metadata)
-        
+
         # 保存prompt到文件进行分析
         # self._save_calibration_prompt_to_file(prompt, len(chunk))
-        
-        # 调用LLM
-        response = call_llm_api(
+
+        # 调用LLM（使用结构化输出）
+        result: StructuredResult = call_llm_api(
             model=self.calibrate_model,
             prompt=prompt,
             api_key=self.api_key,
@@ -337,11 +338,15 @@ class StructuredCalibrator:
             max_retries=self.max_retries,
             retry_delay=self.retry_delay,
             reasoning_effort=self.calibrate_reasoning_effort,
-            task_type="calibrate_chunk"
+            task_type="calibrate_chunk",
+            response_schema=CALIBRATION_RESULT_SCHEMA
         )
-        
-        # 解析响应
-        calibrated_data = self._parse_calibration_response(response)
+
+        # 处理结构化输出结果
+        if not result.success:
+            raise Exception(f"Calibration failed: {result.error}")
+
+        calibrated_data = result.data
         
         # 将结果转换为内部格式
         calibrated_dialogs = []
@@ -492,32 +497,6 @@ class StructuredCalibrator:
         
         return prompt
     
-    def _parse_calibration_response(self, response: str) -> Dict[str, Any]:
-        """
-        解析校对响应
-        
-        Args:
-            response: LLM响应
-            
-        Returns:
-            Dict: 解析后的数据
-        """
-        try:
-            # 尝试提取JSON部分
-            import re
-            json_match = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(1)
-            else:
-                # 如果没找到代码块，尝试直接解析
-                json_str = response.strip()
-            
-            return json.loads(json_str)
-        except Exception as e:
-            logger.error(f"解析校对响应失败: {e}")
-            logger.debug(f"原始响应: {response}")
-            raise Exception(f"无法解析校对结果: {e}")
-    
     def _validate_calibration(self, original_chunk: List[Dict[str, Any]], calibrated_chunk: List[Dict[str, Any]], video_metadata: Dict[str, str]) -> Dict[str, Any]:
         """
         验证校对质量
@@ -556,9 +535,9 @@ class StructuredCalibrator:
             
             # 生成验证prompt
             prompt = self._generate_validation_prompt(original_data, calibrated_data, video_metadata)
-            
-            # 调用LLM验证
-            response = call_llm_api(
+
+            # 调用LLM验证（使用结构化输出）
+            result: StructuredResult = call_llm_api(
                 model=self.validator_model,
                 prompt=prompt,
                 api_key=self.api_key,
@@ -566,11 +545,22 @@ class StructuredCalibrator:
                 max_retries=self.max_retries,
                 retry_delay=self.retry_delay,
                 reasoning_effort=self.validator_reasoning_effort,
-                task_type="validate"
+                task_type="validate",
+                response_schema=VALIDATION_RESULT_SCHEMA
             )
-            
-            # 解析验证结果
-            validation_result = self._parse_validation_response(response)
+
+            # 处理结构化输出结果
+            if not result.success:
+                logger.warning(f"Validation structured output failed: {result.error}")
+                # 验证失败时返回默认通过结果
+                return {
+                    'overall_score': self.overall_score_threshold,
+                    'pass': True,
+                    'issues': [f"Validation failed: {result.error}"],
+                    'recommendation': 'Validation failed, assumed pass'
+                }
+
+            validation_result = result.data
             
             # 检查是否通过验证
             overall_score = validation_result.get('overall_score', 0)
@@ -653,35 +643,7 @@ class StructuredCalibrator:
 - **参考视频辅助信息评估专有名词修正的合理性**"""
 
         return prompt
-    
-    def _parse_validation_response(self, response: str) -> Dict[str, Any]:
-        """解析验证响应"""
-        try:
-            import re
-            json_match = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(1)
-            else:
-                json_str = response.strip()
-            
-            return json.loads(json_str)
-        except Exception as e:
-            logger.error(f"解析验证响应失败: {e}")
-            # 返回默认的"通过"结果
-            return {
-                'overall_score': self.overall_score_threshold,
-                'scores': {
-                    'format_correctness': self.minimum_single_score,
-                    'content_fidelity': self.minimum_single_score,
-                    'text_quality': self.minimum_single_score,
-                    'speaker_consistency': self.minimum_single_score,
-                    'time_consistency': self.minimum_single_score
-                },
-                'pass': True,
-                'issues': [f"验证解析失败: {e}"],
-                'recommendation': '无法验证，假设通过'
-            }
-    
+
     def _format_as_calibrated(self, chunk: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """将原始chunk格式化为校对格式"""
         return [

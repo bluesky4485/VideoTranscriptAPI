@@ -7,8 +7,9 @@ import os
 import threading
 from typing import Any, Dict, List, Optional
 from ..logging import setup_logger
-from .llm import call_llm_api
+from .llm import call_llm_api, StructuredResult
 from .llm_segmented import SegmentedLLMProcessor
+from .schemas import SPEAKER_MAPPING_SCHEMA
 from .text_segmentation import TextSegmentationProcessor
 from .structured_calibrator import StructuredCalibrator
 
@@ -1207,9 +1208,9 @@ class EnhancedLLMProcessor:
             # 3. 保存prompt到文件进行分析
             # self._save_prompt_to_file(speaker_inference_prompt, 'speaker_inference_prompt.txt')
             
-            # 4. 调用LLM进行说话人推断
-            logger.info("执行说话人推断")
-            speaker_mapping_result = call_llm_api(
+            # 4. 调用LLM进行说话人推断（使用结构化输出）
+            logger.info("Executing speaker inference")
+            speaker_mapping_result: StructuredResult = call_llm_api(
                 model=self.summary_model,
                 prompt=speaker_inference_prompt,
                 api_key=self.api_key,
@@ -1217,11 +1218,12 @@ class EnhancedLLMProcessor:
                 max_retries=self.max_retries,
                 retry_delay=self.retry_delay,
                 reasoning_effort=self.summary_reasoning_effort,
-                task_type="speaker_inference"
+                task_type="speaker_inference",
+                response_schema=SPEAKER_MAPPING_SCHEMA
             )
-            
-            # 5. 解析说话人映射关系
-            speaker_mapping = self._parse_speaker_mapping_result(speaker_mapping_result, original_speakers)
+
+            # 5. 处理说话人映射结果
+            speaker_mapping = self._process_speaker_mapping_result(speaker_mapping_result, original_speakers)
             
             # 6. 提取带时间信息的对话数据
             logger.info("提取带时间信息的对话数据")
@@ -1411,40 +1413,42 @@ class EnhancedLLMProcessor:
         
         return '\n'.join(snippets) if snippets else "无足够的转录内容"
     
-    def _parse_speaker_mapping_result(self, llm_result: str, original_speakers: List[str]) -> Dict[str, str]:
-        """解析LLM返回的说话人映射结果"""
+    def _process_speaker_mapping_result(self, result: StructuredResult, original_speakers: List[str]) -> Dict[str, str]:
+        """
+        处理说话人映射结果
+
+        Args:
+            result: LLM 结构化输出结果
+            original_speakers: 原始说话人标识列表
+
+        Returns:
+            Dict[str, str]: 验证后的说话人映射关系
+        """
+        # 如果结构化输出失败，降级使用原始标识
+        if not result.success:
+            logger.warning(f"Speaker inference failed: {result.error}")
+            return {speaker: speaker for speaker in original_speakers}
+
         try:
-            import json
-            import re
-            
-            # 尝试提取JSON部分
-            json_match = re.search(r'```json\s*(.*?)\s*```', llm_result, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(1)
-            else:
-                # 如果没找到代码块，尝试直接解析
-                json_str = llm_result
-            
-            parsed = json.loads(json_str)
-            speaker_mapping = parsed.get('speaker_mapping', {})
-            
+            speaker_mapping = result.data.get('speaker_mapping', {})
+
             # 验证映射关系
             validated_mapping = {}
             for original_speaker in original_speakers:
                 if original_speaker in speaker_mapping:
-                    mapped_name = speaker_mapping[original_speaker].strip()
+                    mapped_name = str(speaker_mapping[original_speaker]).strip()
                     if mapped_name and len(mapped_name) <= 20:  # 合理的名字长度
                         validated_mapping[original_speaker] = mapped_name
                     else:
                         validated_mapping[original_speaker] = original_speaker
                 else:
                     validated_mapping[original_speaker] = original_speaker
-            
-            logger.info(f"成功解析说话人映射: {validated_mapping}")
+
+            logger.info(f"Speaker mapping parsed: {validated_mapping}")
             return validated_mapping
-            
+
         except Exception as e:
-            logger.error(f"解析说话人映射失败: {e}")
+            logger.error(f"Processing speaker mapping failed: {e}")
             # 降级：使用原始标识
             return {speaker: speaker for speaker in original_speakers}
     

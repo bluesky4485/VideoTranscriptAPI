@@ -176,6 +176,26 @@
             "fallback_to_original": true,    // 校对失败时是否回退到原文
             "validator_model": "gpt-4.1-mini",   // 质量验证使用的模型
             "validator_reasoning_effort": null   // null=不支持, "none"=关闭, "low"/"medium"/"high"
+        },
+
+        // ------------------------------------------------------
+        // JSON 结构化输出配置
+        // 用于控制 LLM 的 JSON 输出模式
+        // ------------------------------------------------------
+        "json_output": {
+            // 按模型名匹配输出模式（支持通配符 *）
+            // 匹配顺序：从前到后，首次匹配生效
+            // 可选值：json_schema（严格模式）、json_object（兼容模式）
+            "mode_by_model": {
+                "deepseek*": "json_object",     // DeepSeek 系列不支持 json_schema
+                "qwen*": "json_object",         // 通义千问部分支持
+                "glm*": "json_object",          // 智谱 GLM 系列
+                "*": "json_schema"              // 其他模型使用严格模式
+            },
+            // json_object 模式下解析失败时的最大重试次数
+            "max_retries": 2,
+            // 是否启用模式降级（false 时强制使用 json_schema，用于调试）
+            "enable_fallback": true
         }
     },
 

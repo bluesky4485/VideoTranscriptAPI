@@ -259,6 +259,10 @@ chmod +x BBDown/BBDown
   - `enable_risk_model_selection`: 是否启用风险模型自动选择（检测到敏感内容时自动切换模型）
   - `max_retries`: 最大重试次数（默认2次）
   - `retry_delay`: 重试间隔秒数（默认5秒）
+  - `json_output`: JSON 结构化输出配置
+    - `mode_by_model`: 按模型名匹配输出模式（支持通配符），如 `deepseek*: json_object`
+    - `max_retries`: json_object 模式下解析失败时的最大重试次数
+    - `enable_fallback`: 是否启用模式降级（false 时强制使用 json_schema）
 
 ## 使用方法
 
