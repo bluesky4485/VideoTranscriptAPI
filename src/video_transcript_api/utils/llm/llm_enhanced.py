@@ -1,6 +1,10 @@
 """
 增强的LLM处理模块
 集成分段处理逻辑，自动判断是否需要分段
+
+KV Cache 优化设计：
+- 静态指令放在 system_prompt 中，可被缓存复用
+- 动态内容（文本、元数据）放在 user prompt 末尾
 """
 import concurrent.futures
 import os
@@ -13,6 +17,16 @@ from .llm_segmented import SegmentedLLMProcessor
 from .schemas import SPEAKER_MAPPING_SCHEMA
 from .text_segmentation import TextSegmentationProcessor
 from .structured_calibrator import StructuredCalibrator
+from .prompts import (
+    CALIBRATE_SYSTEM_PROMPT,
+    CALIBRATE_SYSTEM_PROMPT_WITH_SPEAKER,
+    SUMMARY_SYSTEM_PROMPT_SINGLE_SPEAKER,
+    SUMMARY_SYSTEM_PROMPT_MULTI_SPEAKER,
+    SPEAKER_INFERENCE_SYSTEM_PROMPT,
+    build_calibrate_user_prompt,
+    build_summary_user_prompt,
+    build_speaker_inference_user_prompt,
+)
 
 logger = setup_logger(__name__)
 
@@ -731,13 +745,20 @@ class EnhancedLLMProcessor:
         # 并发调用LLM API
         result_dict = {}
 
+        # 选择 system prompt（KV Cache 优化）
+        calibrate_system_prompt = (
+            CALIBRATE_SYSTEM_PROMPT_WITH_SPEAKER if use_speaker_recognition
+            else CALIBRATE_SYSTEM_PROMPT
+        )
+
         def run_calibrate():
             try:
                 logger.info("短文本校对任务开始: %s, 模型: %s", task_id, selected_calibrate_model)
                 calibrated = call_llm_api(
                     selected_calibrate_model, calibrate_prompt, self.api_key,
                     self.base_url, self.max_retries, self.retry_delay,
-                    selected_calibrate_effort, "calibrate"
+                    selected_calibrate_effort, "calibrate",
+                    system_prompt=calibrate_system_prompt,  # KV Cache 优化
                 )
                 # 检查是否返回空内容
                 if not calibrated or not calibrated.strip():
@@ -754,6 +775,12 @@ class EnhancedLLMProcessor:
         def run_summary():
             try:
                 logger.info("短文本总结任务开始: %s, 模型: %s", task_id, selected_summary_model)
+                # 检测说话人数量以选择 system prompt（KV Cache 优化）
+                speaker_count = self._detect_speaker_count(use_speaker_recognition, transcription_data, transcript)
+                summary_system_prompt = (
+                    SUMMARY_SYSTEM_PROMPT_MULTI_SPEAKER if speaker_count > 1
+                    else SUMMARY_SYSTEM_PROMPT_SINGLE_SPEAKER
+                )
                 # 生成总结提示词
                 summary_prompt = self._generate_original_summary_prompt(
                     transcript, video_title, author, description, use_speaker_recognition, transcription_data
@@ -762,7 +789,8 @@ class EnhancedLLMProcessor:
                 summary = call_llm_api(
                     selected_summary_model, summary_prompt, self.api_key,
                     self.base_url, self.max_retries, self.retry_delay,
-                    selected_summary_effort, "summary"
+                    selected_summary_effort, "summary",
+                    system_prompt=summary_system_prompt,  # KV Cache 优化
                 )
                 # 检查是否返回空内容
                 if not summary or not summary.strip():
@@ -1256,7 +1284,8 @@ class EnhancedLLMProcessor:
                 retry_delay=self.retry_delay,
                 reasoning_effort=self.summary_reasoning_effort,
                 task_type="speaker_inference",
-                response_schema=SPEAKER_MAPPING_SCHEMA
+                response_schema=SPEAKER_MAPPING_SCHEMA,
+                system_prompt=SPEAKER_INFERENCE_SYSTEM_PROMPT,  # KV Cache 优化
             )
 
             # 5. 处理说话人映射结果
@@ -1638,6 +1667,14 @@ class EnhancedLLMProcessor:
             use_speaker_recognition=True, transcription_data=transcription_data
         )
 
+        # 选择 system prompt（KV Cache 优化）
+        # 结构化内容通常是多说话人场景
+        speaker_count = len(speakers) if speakers else 1
+        summary_system_prompt = (
+            SUMMARY_SYSTEM_PROMPT_MULTI_SPEAKER if speaker_count > 1
+            else SUMMARY_SYSTEM_PROMPT_SINGLE_SPEAKER
+        )
+
         # 使用选定的总结模型和 reasoning_effort
         return call_llm_api(
             model=selected_summary_model,
@@ -1647,7 +1684,8 @@ class EnhancedLLMProcessor:
             max_retries=self.max_retries,
             retry_delay=self.retry_delay,
             reasoning_effort=selected_reasoning_effort,
-            task_type="summary"
+            task_type="summary",
+            system_prompt=summary_system_prompt,  # KV Cache 优化
         )
     
     def _save_structured_result(self, cache_dir: str, structured_result: Dict, calibrated_text: str, summary_text: str):
