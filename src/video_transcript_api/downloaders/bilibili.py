@@ -34,24 +34,42 @@ class BilibiliDownloader(BaseDownloader):
     def _extract_video_id(self, url):
         """
         从URL中提取视频ID (BV号)
-        
+
         参数:
             url: 视频URL
-            
+
         返回:
             str: 视频BV号
         """
         # 解析短链接
         if "b23.tv" in url:
             url = self.resolve_short_url(url)
-        
+
         # 提取BV号
         match = re.search(r'BV(\w+)', url)
         if match:
             return f"BV{match.group(1)}"
-        
+
         logger.error(f"无法从URL中提取Bilibili视频BV号: {url}")
         raise ValueError(f"无法从URL中提取Bilibili视频BV号: {url}")
+
+    def _extract_page_number(self, url):
+        """
+        从URL中提取分P号
+
+        参数:
+            url: 视频URL，可能包含 ?p=X 或 &p=X 参数
+
+        返回:
+            int: 分P号，默认为1
+        """
+        # 匹配 ?p=X 或 &p=X
+        match = re.search(r'[?&]p=(\d+)', url)
+        if match:
+            page_num = int(match.group(1))
+            logger.info(f"从URL中提取到分P号: {page_num}")
+            return page_num
+        return 1
     
     def extract_video_id(self, url):
         """
@@ -111,9 +129,12 @@ class BilibiliDownloader(BaseDownloader):
             temp_dir = os.path.join(self.temp_dir, f"bbdown_{bv_id}_{int(time.time())}")
             os.makedirs(temp_dir, exist_ok=True)
             
+            # 提取分P号
+            page_num = self._extract_page_number(url)
+
             # 在Windows上，使用完整的命令字符串
             if system_platform == "windows":
-                cmd = f'"{bbdown_path}" "{url}"'
+                cmd = f'"{bbdown_path}" "{url}" -p {page_num}'
                 if audio_only:
                     cmd += " --audio-only"
                 logger.info(f"执行BBDown命令: {cmd}")
@@ -147,8 +168,8 @@ class BilibiliDownloader(BaseDownloader):
                     logger.error(f"BBDown执行超时: {str(e)}")
                     raise ValueError(f"BBDown执行超时，超过{timeout}秒")
             else:
-                # 在Linux系统下使用列表参数执行命令
-                download_args = [bbdown_path, url]
+                # 在Linux/macOS系统下使用列表参数执行命令
+                download_args = [bbdown_path, url, "-p", str(page_num)]
                 if audio_only:
                     download_args.append("--audio-only")
                 
