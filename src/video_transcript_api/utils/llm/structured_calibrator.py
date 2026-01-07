@@ -1,6 +1,10 @@
 """
 结构化校对处理器
 专门处理带说话人识别的转录数据校对
+
+KV Cache 优化设计：
+- 静态指令放在 system_prompt 中，可被缓存复用
+- 动态内容（文本、元数据）放在 user prompt 末尾
 """
 import json
 import asyncio
@@ -10,7 +14,15 @@ from concurrent.futures import ThreadPoolExecutor
 import concurrent.futures
 
 from ..logging import setup_logger
-from .llm import call_llm_api
+from . import normalize_reasoning_effort
+from .llm import call_llm_api, StructuredResult
+from .schemas import CALIBRATION_RESULT_SCHEMA, VALIDATION_RESULT_SCHEMA
+from .prompts import (
+    STRUCTURED_CALIBRATE_SYSTEM_PROMPT,
+    VALIDATION_SYSTEM_PROMPT,
+    build_structured_calibrate_user_prompt,
+    build_validation_user_prompt,
+)
 
 logger = setup_logger(__name__)
 
@@ -21,21 +33,27 @@ class StructuredCalibrator:
     def __init__(self, config: Dict[str, Any]):
         """
         初始化结构化校对处理器
-        
+
         Args:
             config: 配置字典
         """
         self.config = config
         self.llm_config = config.get('llm', {})
         self.calibration_config = self.llm_config.get('structured_calibration', {})
-        
+
         # LLM API 配置
         self.api_key = self.llm_config['api_key']
         self.base_url = self.llm_config['base_url']
         self.calibrate_model = self.llm_config['calibrate_model']
-        self.calibrate_reasoning_effort = self.llm_config.get('calibrate_reasoning_effort', None)
+        self.calibrate_reasoning_effort = normalize_reasoning_effort(
+            self.llm_config.get('calibrate_reasoning_effort'))
         self.validator_model = self.calibration_config.get('validator_model', self.calibrate_model)
-        self.validator_reasoning_effort = self.calibration_config.get('validator_reasoning_effort', None)
+        self.validator_reasoning_effort = normalize_reasoning_effort(
+            self.calibration_config.get('validator_reasoning_effort'))
+        # 风险校验模型配置
+        self.risk_validator_model = self.calibration_config.get('risk_validator_model')
+        self.risk_validator_reasoning_effort = normalize_reasoning_effort(
+            self.calibration_config.get('risk_validator_reasoning_effort'))
         self.max_retries = self.llm_config['max_retries']
         self.retry_delay = self.llm_config['retry_delay']
         
@@ -55,33 +73,58 @@ class StructuredCalibrator:
         
         logger.info(f"结构化校对器初始化完成，配置: chunk长度[{self.min_chunk_length}-{self.max_chunk_length}], 并发限制: {self.calibration_concurrent_limit}")
     
-    def calibrate_structured_dialogs(self, dialogs_with_time: List[Dict[str, Any]], video_metadata: Dict[str, str]) -> List[Dict[str, Any]]:
+    def calibrate_structured_dialogs(
+        self, dialogs_with_time: List[Dict[str, Any]], video_metadata: Dict[str, str],
+        selected_calibrate_model: str = None, selected_calibrate_effort: str = None,
+        selected_validator_model: str = None, selected_validator_effort: str = None
+    ) -> List[Dict[str, Any]]:
         """
         校对结构化对话数据
-        
+
         Args:
             dialogs_with_time: 包含时间信息的对话列表
             video_metadata: 视频元数据
-            
+            selected_calibrate_model: 选定的校对模型（可选，默认使用配置的模型）
+            selected_calibrate_effort: 选定的校对 reasoning_effort（可选）
+            selected_validator_model: 选定的校验模型（可选，默认使用配置的模型）
+            selected_validator_effort: 选定的校验 reasoning_effort（可选）
+
         Returns:
             List[Dict]: 校对后的对话数据
         """
-        logger.info(f"开始结构化校对，对话数量: {len(dialogs_with_time)}")
-        
+        # 如果指定了模型，临时覆盖实例变量（用于本次调用）
+        original_calibrate_model = self.calibrate_model
+        original_calibrate_effort = self.calibrate_reasoning_effort
+        original_validator_model = self.validator_model
+        original_validator_effort = self.validator_reasoning_effort
+
+        if selected_calibrate_model is not None:
+            self.calibrate_model = selected_calibrate_model
+            logger.info(f"使用指定的校对模型: {selected_calibrate_model}")
+        if selected_calibrate_effort is not None:
+            self.calibrate_reasoning_effort = selected_calibrate_effort
+        if selected_validator_model is not None:
+            self.validator_model = selected_validator_model
+            logger.info(f"使用指定的校验模型: {selected_validator_model}")
+        if selected_validator_effort is not None:
+            self.validator_reasoning_effort = selected_validator_effort
+
+        logger.info(f"开始结构化校对，对话数量: {len(dialogs_with_time)}, 模型: {self.calibrate_model}, 校验模型: {self.validator_model}")
+
         try:
             # 1. 智能分块
             chunks = self._intelligent_chunking(dialogs_with_time)
             logger.info(f"分块完成，共 {len(chunks)} 个chunk")
-            
+
             # 2. 并发校对处理
             calibrated_chunks = self._process_chunks_concurrent(chunks, video_metadata)
-            
+
             # 3. 合并结果
             calibrated_dialogs = self._merge_calibrated_chunks(calibrated_chunks)
-            
+
             logger.info(f"结构化校对完成，输出对话数量: {len(calibrated_dialogs)}")
             return calibrated_dialogs
-            
+
         except Exception as e:
             logger.error(f"结构化校对失败: {e}")
             # 降级处理：返回原始数据
@@ -90,6 +133,12 @@ class StructuredCalibrator:
                 return dialogs_with_time
             else:
                 raise
+        finally:
+            # 恢复原始配置
+            self.calibrate_model = original_calibrate_model
+            self.calibrate_reasoning_effort = original_calibrate_effort
+            self.validator_model = original_validator_model
+            self.validator_reasoning_effort = original_validator_effort
     
     def _intelligent_chunking(self, dialogs: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
         """
@@ -302,27 +351,37 @@ class StructuredCalibrator:
                 for dialog in chunk
             ]
         }
-        
-        # 生成校对prompt
-        prompt = self._generate_calibration_prompt(input_data, video_metadata)
-        
+
+        # KV Cache 优化：使用静态 system_prompt + 动态 user_prompt
+        user_prompt = build_structured_calibrate_user_prompt(
+            input_data=input_data,
+            video_title=video_metadata.get('video_title', ''),
+            author=video_metadata.get('author', ''),
+            description=video_metadata.get('description', ''),
+        )
+
         # 保存prompt到文件进行分析
-        # self._save_calibration_prompt_to_file(prompt, len(chunk))
-        
-        # 调用LLM
-        response = call_llm_api(
+        # self._save_calibration_prompt_to_file(user_prompt, len(chunk))
+
+        # 调用LLM（使用结构化输出）
+        result: StructuredResult = call_llm_api(
             model=self.calibrate_model,
-            prompt=prompt,
+            prompt=user_prompt,
             api_key=self.api_key,
             base_url=self.base_url,
             max_retries=self.max_retries,
             retry_delay=self.retry_delay,
             reasoning_effort=self.calibrate_reasoning_effort,
-            task_type="calibrate_chunk"
+            task_type="calibrate_chunk",
+            response_schema=CALIBRATION_RESULT_SCHEMA,
+            system_prompt=STRUCTURED_CALIBRATE_SYSTEM_PROMPT,  # KV Cache 优化
         )
-        
-        # 解析响应
-        calibrated_data = self._parse_calibration_response(response)
+
+        # 处理结构化输出结果
+        if not result.success:
+            raise Exception(f"Calibration failed: {result.error}")
+
+        calibrated_data = result.data
         
         # 将结果转换为内部格式
         calibrated_dialogs = []
@@ -382,123 +441,9 @@ class StructuredCalibrator:
                 best_match = orig_dialog
         
         return best_match if best_match else {}
-    
-    def _generate_calibration_prompt(self, input_data: Dict[str, Any], video_metadata: Dict[str, str]) -> str:
-        """
-        生成校对prompt
-        
-        Args:
-            input_data: 输入的对话数据
-            video_metadata: 视频元数据
-            
-        Returns:
-            str: 校对prompt
-        """
-        # 构建辅助信息（复用原有逻辑）
-        context_info = ""
-        video_title = video_metadata.get('video_title', '')
-        author = video_metadata.get('author', '')
-        description = video_metadata.get('description', '')
-        
-        if video_title or author or description:
-            context_info = "\n以下是视频的辅助信息，可以帮助你更准确地校对文本中的专有名词和拼写错误：\n"
-            if video_title:
-                context_info += f"- 视频标题：{video_title}\n"
-            if author:
-                context_info += f"- 作者/频道：{author}\n"
-            if description:
-                context_info += f"- 视频描述：{description[:500]}{'...' if len(description) > 500 else ''}\n"
-            context_info += "\n"
-        
-        input_dialog_count = len(input_data.get('dialogs', []))
-        
-        prompt = f"""你将收到一段音频的转录文本JSON数据。你的任务是对这段文本进行校对，提高其可读性，但不改变原意。
 
-{context_info}**核心要求（必须遵守）：**
-- **对话数量必须保持不变：输入有{input_dialog_count}个对话，输出也必须有{input_dialog_count}个对话**
-- **禁止合并、拆分或增删对话**
-- **每个对话的说话人和时间信息必须保持不变**
+    # 注：_generate_calibration_prompt 已移至 prompts.py，使用 build_structured_calibrate_user_prompt
 
-请按照以下指示进行校对:
-1. **只能在单个对话内部进行修改**，不得跨对话操作
-2. 修正明显的错别字和语法错误
-3. 调整标点符号的使用，确保其正确性和一致性
-4. 如有必要，可以轻微调整词序以提高可读性
-5. 保留原文中的口语化表达和说话者的语气特点
-6. 不要添加或删除任何实质性内容
-7. 不要解释或评论文本内容
-
-输入格式示例：
-```json
-{{
-  "dialogs": [
-    {{
-      "start_time": "00:01:23",
-      "speaker": "知白",
-      "text": "那个呃今天我们来聊一下产品设计呃我觉得这个很重要的"
-    }},
-    {{
-      "start_time": "00:01:45", 
-      "speaker": "少楠",
-      "text": "对对对我也这么认为呃我觉得用户体验是最核心的"
-    }}
-  ]
-}}
-```
-
-输出格式要求（必须严格遵守）：
-- **必须输出恰好{input_dialog_count}个对话**
-- **每个对话的start_time和speaker必须与原始数据一致**
-```json
-{{
-  "calibrated_dialogs": [
-    {{
-      "start_time": "00:01:23",
-      "speaker": "知白", 
-      "text": "今天我们来聊一下产品设计，我觉得这个很重要。"
-    }},
-    {{
-      "start_time": "00:01:45",
-      "speaker": "少楠",
-      "text": "对，我也这么认为。我觉得用户体验是最核心的。"
-    }}
-  ]
-}}
-```
-
-待校对的JSON数据：
-{json.dumps(input_data, ensure_ascii=False, indent=2)}
-
-只返回校对后的JSON，不要包含任何其他解释或评论。"""
-        
-        return prompt
-    
-    def _parse_calibration_response(self, response: str) -> Dict[str, Any]:
-        """
-        解析校对响应
-        
-        Args:
-            response: LLM响应
-            
-        Returns:
-            Dict: 解析后的数据
-        """
-        try:
-            # 尝试提取JSON部分
-            import re
-            json_match = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(1)
-            else:
-                # 如果没找到代码块，尝试直接解析
-                json_str = response.strip()
-            
-            return json.loads(json_str)
-        except Exception as e:
-            logger.error(f"解析校对响应失败: {e}")
-            logger.debug(f"原始响应: {response}")
-            raise Exception(f"无法解析校对结果: {e}")
-    
     def _validate_calibration(self, original_chunk: List[Dict[str, Any]], calibrated_chunk: List[Dict[str, Any]], video_metadata: Dict[str, str]) -> Dict[str, Any]:
         """
         验证校对质量
@@ -534,24 +479,42 @@ class StructuredCalibrator:
                     for dialog in calibrated_chunk
                 ]
             }
-            
-            # 生成验证prompt
-            prompt = self._generate_validation_prompt(original_data, calibrated_data, video_metadata)
-            
-            # 调用LLM验证
-            response = call_llm_api(
+
+            # KV Cache 优化：使用静态 system_prompt + 动态 user_prompt
+            user_prompt = build_validation_user_prompt(
+                original_data=original_data,
+                calibrated_data=calibrated_data,
+                video_title=video_metadata.get('video_title', ''),
+                author=video_metadata.get('author', ''),
+                description=video_metadata.get('description', ''),
+            )
+
+            # 调用LLM验证（使用结构化输出）
+            result: StructuredResult = call_llm_api(
                 model=self.validator_model,
-                prompt=prompt,
+                prompt=user_prompt,
                 api_key=self.api_key,
                 base_url=self.base_url,
                 max_retries=self.max_retries,
                 retry_delay=self.retry_delay,
                 reasoning_effort=self.validator_reasoning_effort,
-                task_type="validate"
+                task_type="validate",
+                response_schema=VALIDATION_RESULT_SCHEMA,
+                system_prompt=VALIDATION_SYSTEM_PROMPT,  # KV Cache 优化
             )
-            
-            # 解析验证结果
-            validation_result = self._parse_validation_response(response)
+
+            # 处理结构化输出结果
+            if not result.success:
+                logger.warning(f"Validation structured output failed: {result.error}")
+                # 验证失败时返回默认通过结果
+                return {
+                    'overall_score': self.overall_score_threshold,
+                    'pass': True,
+                    'issues': [f"Validation failed: {result.error}"],
+                    'recommendation': 'Validation failed, assumed pass'
+                }
+
+            validation_result = result.data
             
             # 检查是否通过验证
             overall_score = validation_result.get('overall_score', 0)
@@ -574,95 +537,9 @@ class StructuredCalibrator:
                 'issues': [f"验证过程异常: {e}"],
                 'recommendation': '验证异常，假设通过'
             }
-    
-    def _generate_validation_prompt(self, original_data: Dict[str, Any], calibrated_data: Dict[str, Any], video_metadata: Dict[str, str]) -> str:
-        """生成验证prompt"""
-        # 构建辅助信息（与校对prompt保持一致）
-        context_info = ""
-        video_title = video_metadata.get('video_title', '')
-        author = video_metadata.get('author', '')
-        description = video_metadata.get('description', '')
 
-        if video_title or author or description:
-            context_info = "\n以下是视频的辅助信息，可以帮助你更准确地评估校对质量（特别是专有名词、人名等）：\n"
-            if video_title:
-                context_info += f"- 视频标题：{video_title}\n"
-            if author:
-                context_info += f"- 作者/频道：{author}\n"
-            if description:
-                context_info += f"- 视频描述：{description[:500]}{'...' if len(description) > 500 else ''}\n"
-            context_info += "\n"
+    # 注：_generate_validation_prompt 已移至 prompts.py，使用 build_validation_user_prompt
 
-        prompt = f"""你是一个专业的文本校对质量评估专家。请评估以下校对结果的质量。
-
-{context_info}原始文本：
-{json.dumps(original_data, ensure_ascii=False, indent=2)}
-
-校对后文本：
-{json.dumps(calibrated_data, ensure_ascii=False, indent=2)}
-
-请从以下维度评估校对质量（每项0-10分）：
-
-1. 格式正确性：JSON格式是否正确，字段是否完整
-2. 内容保真度：是否保持了原始内容的意思，没有添加或删除实质信息。**注意：结合视频辅助信息，某些专有名词、人名的修正是合理的**
-3. 文本质量：错别字、语法、标点是否得到改善
-4. 说话人一致性：说话人标识是否保持不变
-5. 时间信息一致性：时间戳是否保持不变
-
-请按以下JSON格式返回评估结果：
-```json
-{{
-  "overall_score": 8.5,
-  "scores": {{
-    "format_correctness": 10,
-    "content_fidelity": 9,
-    "text_quality": 8,
-    "speaker_consistency": 10,
-    "time_consistency": 10
-  }},
-  "pass": true,
-  "issues": ["发现轻微的标点问题"],
-  "recommendation": "建议重新校对标点符号部分"
-}}
-```
-
-评估标准：
-- overall_score >= {self.overall_score_threshold} 且所有单项 >= {self.minimum_single_score} 才算通过
-- 格式错误直接不通过
-- 内容增删超过10%不通过
-- 说话人或时间信息改变直接不通过
-- **参考视频辅助信息评估专有名词修正的合理性**"""
-
-        return prompt
-    
-    def _parse_validation_response(self, response: str) -> Dict[str, Any]:
-        """解析验证响应"""
-        try:
-            import re
-            json_match = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(1)
-            else:
-                json_str = response.strip()
-            
-            return json.loads(json_str)
-        except Exception as e:
-            logger.error(f"解析验证响应失败: {e}")
-            # 返回默认的"通过"结果
-            return {
-                'overall_score': self.overall_score_threshold,
-                'scores': {
-                    'format_correctness': self.minimum_single_score,
-                    'content_fidelity': self.minimum_single_score,
-                    'text_quality': self.minimum_single_score,
-                    'speaker_consistency': self.minimum_single_score,
-                    'time_consistency': self.minimum_single_score
-                },
-                'pass': True,
-                'issues': [f"验证解析失败: {e}"],
-                'recommendation': '无法验证，假设通过'
-            }
-    
     def _format_as_calibrated(self, chunk: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """将原始chunk格式化为校对格式"""
         return [

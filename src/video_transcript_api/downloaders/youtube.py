@@ -32,6 +32,9 @@ class YoutubeDownloader(BaseDownloader):
         self.ytt_api = YouTubeTranscriptApi()
         # 延迟初始化 yt-dlp 配置构建器
         self._ytdlp_builder: YtdlpConfigBuilder | None = None
+        # 延迟初始化 YouTube API Server 客户端
+        self._youtube_api_client = None
+        self._init_youtube_api_client()
 
     @property
     def ytdlp_builder(self) -> YtdlpConfigBuilder:
@@ -39,6 +42,134 @@ class YoutubeDownloader(BaseDownloader):
         if self._ytdlp_builder is None:
             self._ytdlp_builder = YtdlpConfigBuilder(self.config)
         return self._ytdlp_builder
+
+    def _init_youtube_api_client(self):
+        """
+        初始化 YouTube API Server 客户端（如果配置启用）
+        """
+        api_config = self.config.get("youtube_api_server", {})
+        if api_config.get("enabled"):
+            try:
+                from .youtube_api_client import YouTubeApiClient
+                self._youtube_api_client = YouTubeApiClient(api_config)
+                logger.info("[youtube] API Server client initialized")
+            except Exception as e:
+                logger.error(f"[youtube] Failed to initialize API Server client: {e}")
+                self._youtube_api_client = None
+
+    @property
+    def use_api_server(self) -> bool:
+        """是否使用 YouTube API Server"""
+        return self._youtube_api_client is not None
+
+    def fetch_for_transcription(self, url: str, use_speaker_recognition: bool = False) -> dict:
+        """
+        一次性获取 YouTube 视频的所有转录所需资源（仅当启用 API Server 时使用）
+
+        该方法通过一次 API 请求获取视频信息、字幕或音频，避免多次请求。
+        根据 use_speaker_recognition 参数决定请求策略：
+        - True: 必须下载音频（用于说话人识别转录）
+        - False: 优先获取字幕，无字幕则自动 fallback 到音频
+
+        Args:
+            url: 视频 URL
+            use_speaker_recognition: 是否需要说话人识别
+
+        Returns:
+            dict: 包含以下字段：
+                - video_id: str
+                - video_title: str
+                - author: str
+                - description: str
+                - platform: "youtube"
+                - transcript: str | None (字幕文本，已解析为纯文本)
+                - audio_path: str | None (本地音频文件路径)
+                - need_transcription: bool (是否需要调用转录服务)
+
+        Raises:
+            RuntimeError: 未启用 API Server
+            YouTubeApiError: API 调用失败（不会降级到其他方式）
+        """
+        if not self.use_api_server:
+            raise RuntimeError("YouTube API Server not enabled")
+
+        from .youtube_api_client import YouTubeApiClient
+
+        video_id = self._extract_video_id(url)
+        logger.info(
+            f"[youtube] fetch_for_transcription: video_id={video_id}, "
+            f"use_speaker_recognition={use_speaker_recognition}"
+        )
+
+        # 根据 use_speaker_recognition 决定请求参数
+        # - 需要说话人识别: 必须下载音频
+        # - 不需要说话人识别: 优先字幕，无则 fallback 到音频
+        include_audio = use_speaker_recognition
+        include_transcript = not use_speaker_recognition
+
+        # 调用 API（一次请求获取所有信息）
+        result = self._youtube_api_client.create_and_wait(
+            video_id,
+            include_audio=include_audio,
+            include_transcript=include_transcript
+        )
+
+        # 提取视频信息
+        video_info = result.video_info
+        video_title = video_info.title if video_info else f"youtube_{video_id}"
+        author = video_info.author if video_info else ""
+        description = video_info.description if video_info else ""
+
+        transcript = None
+        audio_path = None
+        need_transcription = False
+
+        if use_speaker_recognition:
+            # 必须下载音频用于说话人识别
+            if result.audio and result.audio.url:
+                audio_path = self._youtube_api_client.download_to_local(result.audio.url)
+                need_transcription = True
+                logger.info(f"[youtube] Audio downloaded for speaker recognition: {audio_path}")
+            else:
+                from .youtube_api_errors import YouTubeApiError, ErrorCode
+                raise YouTubeApiError(
+                    ErrorCode.UNEXPECTED,
+                    "Audio requested but not returned by API"
+                )
+        else:
+            # 优先使用字幕
+            if result.has_transcript and not result.audio_fallback and result.transcript:
+                # 有字幕，下载并解析
+                srt_content = self._youtube_api_client.download_content(result.transcript.url)
+                transcript = YouTubeApiClient.parse_srt_to_text(srt_content)
+                need_transcription = False
+                logger.info(
+                    f"[youtube] Transcript downloaded and parsed, "
+                    f"length={len(transcript)} chars"
+                )
+            elif result.audio and result.audio.url:
+                # 无字幕，下载 fallback 的音频
+                audio_path = self._youtube_api_client.download_to_local(result.audio.url)
+                need_transcription = True
+                logger.info(f"[youtube] No transcript, audio fallback: {audio_path}")
+            else:
+                from .youtube_api_errors import YouTubeApiError, ErrorCode
+                raise YouTubeApiError(
+                    ErrorCode.UNEXPECTED,
+                    "Neither transcript nor audio returned by API"
+                )
+
+        return {
+            "video_id": video_id,
+            "video_title": video_title,
+            "author": author,
+            "description": description,
+            "platform": "youtube",
+            "transcript": transcript,
+            "audio_path": audio_path,
+            "need_transcription": need_transcription,
+        }
+
     def can_handle(self, url):
         """
         判断是否可以处理该URL

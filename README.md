@@ -105,8 +105,8 @@ video_transcript_api/
 │   ├── architecture/             # 架构文档
 │   └── examples/                 # 示例文档
 ├── config/                       # 配置文件目录
-│   ├── config.example.json       # 配置示例文件
-│   └── config.json               # 实际配置文件
+│   ├── config.example.jsonc      # 配置示例文件（支持注释）
+│   └── config.jsonc              # 实际配置文件（支持注释）
 ├── data/                         # 数据目录
 │   ├── cache/                    # 缓存数据
 │   ├── logs/                     # 日志文件
@@ -183,7 +183,7 @@ chmod +x BBDown/BBDown
 
 6. 修改配置文件
 
-编辑`config/config.json`配置文件，设置相关参数：
+编辑`config/config.jsonc`配置文件，设置相关参数（支持 `//` 注释）：
 
 ```json
 {
@@ -254,8 +254,15 @@ chmod +x BBDown/BBDown
   - `base_url`: LLM API基础URL
   - `calibrate_model`: 校对文本使用的模型
   - `summary_model`: 内容总结使用的模型
+  - `risk_calibrate_model`: 风险内容校对使用的模型（可选，为空则不切换）
+  - `risk_summary_model`: 风险内容总结使用的模型
+  - `enable_risk_model_selection`: 是否启用风险模型自动选择（检测到敏感内容时自动切换模型）
   - `max_retries`: 最大重试次数（默认2次）
   - `retry_delay`: 重试间隔秒数（默认5秒）
+  - `json_output`: JSON 结构化输出配置
+    - `mode_by_model`: 按模型名匹配输出模式（支持通配符），如 `deepseek*: json_object`
+    - `max_retries`: json_object 模式下解析失败时的最大重试次数
+    - `enable_fallback`: 是否启用模式降级（false 时强制使用 json_schema）
 
 ## 使用方法
 

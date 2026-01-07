@@ -21,7 +21,7 @@ from src.video_transcript_api.utils.llm.llm_enhanced import EnhancedLLMProcessor
 
 def load_config():
     """加载实际的配置文件"""
-    config_path = os.path.join(project_root, 'config', 'config.json')
+    config_path = os.path.join(project_root, 'config', 'config.jsonc')
     with open(config_path, 'r', encoding='utf-8') as f:
         return json.load(f)
 
@@ -258,7 +258,7 @@ def run_all_tests():
     print("\n" + "=" * 80)
     print("RISK MODEL SELECTION FEATURE TEST SUITE")
     print("=" * 80)
-    print(f"\nUsing config from: {os.path.join(project_root, 'config', 'config.json')}")
+    print(f"\nUsing config from: {os.path.join(project_root, 'config', 'config.jsonc')}")
 
     try:
         test_feature_disabled()

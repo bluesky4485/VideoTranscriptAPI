@@ -19,7 +19,7 @@ logger = setup_logger(__name__)
 
 def load_config():
     """Load configuration from config file"""
-    config_path = os.path.join(project_root, 'config', 'config.json')
+    config_path = os.path.join(project_root, 'config', 'config.jsonc')
 
     if not os.path.exists(config_path):
         logger.error(f"Config file not found: {config_path}")
