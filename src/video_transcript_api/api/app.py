@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from ..utils.notifications import init_global_notifier, shutdown_global_notifier
 from ..utils.ytdlp import YtdlpConfigBuilder
 from ..utils.llm import set_default_config, log_llm_stats
-from .context import get_config, get_logger, get_static_dir
+from .context import get_config, get_logger, get_static_dir, get_temp_manager
 from .routes import audit, tasks, users, views
 from .services.transcription import process_llm_queue, process_task_queue
 
@@ -42,6 +42,11 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     async def startup_event():
+        temp_manager = get_temp_manager()
+        old_files_count = temp_manager.clean_up_old_files(hours=24)
+        if old_files_count > 0:
+            logger.info(f"启动时清理了 {old_files_count} 个旧临时文件")
+
         init_global_notifier()
 
         # 设置 LLM 模块默认配置（用于 JSON 结构化输出）
@@ -78,7 +83,9 @@ def create_app() -> FastAPI:
 
     @app.on_event("shutdown")
     async def shutdown_event():
-        # 输出 LLM 调用统计
+        temp_manager = get_temp_manager()
+        temp_manager.clean_up()
+
         log_llm_stats()
 
         shutdown_global_notifier()

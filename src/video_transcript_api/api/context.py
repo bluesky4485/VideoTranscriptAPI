@@ -15,6 +15,7 @@ from ..utils.llm import EnhancedLLMProcessor
 from ..utils.logging import get_audit_logger as _get_audit_logger_impl
 from ..utils.logging import load_config as _load_config_impl
 from ..utils.logging import setup_logger
+from ..utils.tempfile_manager import TempFileManager
 
 # In-memory task result store shared across routes/workers
 _task_results: Dict[str, Dict[str, Any]] = {}
@@ -57,6 +58,20 @@ def get_audit_logger():
 def get_cache_manager():
     cache_dir = get_config().get("storage", {}).get("cache_dir", "./data/cache")
     return CacheManager(cache_dir)
+
+
+@lru_cache
+def get_temp_manager():
+    temp_dir = get_config().get("storage", {}).get("temp_dir", "./data/temp")
+    return TempFileManager(temp_dir)
+
+
+@lru_cache
+def get_workspace_dir() -> str:
+    workspace_dir = (
+        get_config().get("storage", {}).get("workspace_dir", "./data/workspace")
+    )
+    return workspace_dir
 
 
 @lru_cache
