@@ -22,7 +22,6 @@
 
 - 统一封装 OpenAI 兼容 API，切换模型只需改配置
 - 配置与代码分离，支持多环境
-- 提供 Python / TypeScript 双语言实现
 
 ### 1.2 配置文件设计
 
@@ -52,7 +51,7 @@ defaults:
   timeout: 60
 ```
 
-### 1.3 Python 实现
+### 1.3 客户端实现
 
 ```python
 # llm/client.py
@@ -124,84 +123,6 @@ class LLMClient:
         response = self.client.post("/chat/completions", json=payload)
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"]
-```
-
-### 1.4 TypeScript 实现
-
-```typescript
-// lib/llm/client.ts
-import fs from 'fs';
-import path from 'path';
-import yaml from 'js-yaml';
-
-interface LLMConfig {
-  baseUrl: string;
-  apiKey: string;
-  model: string;
-  temperature: number;
-  maxTokens: number;
-  timeout: number;
-}
-
-function loadConfig(provider?: string): LLMConfig {
-  const configPath = path.join(process.cwd(), 'config', 'llm.yaml');
-  const config = yaml.load(fs.readFileSync(configPath, 'utf-8')) as any;
-
-  provider = provider || config.default_provider;
-  const providerConfig = config.providers[provider];
-  const defaults = config.defaults || {};
-
-  // 环境变量注入
-  let apiKey = providerConfig.api_key;
-  const match = apiKey.match(/^\$\{(.+)\}$/);
-  if (match) {
-    apiKey = process.env[match[1]] || '';
-  }
-
-  return {
-    baseUrl: providerConfig.base_url,
-    apiKey,
-    model: providerConfig.default_model || defaults.model,
-    temperature: defaults.temperature ?? 0,
-    maxTokens: defaults.max_tokens ?? 4096,
-    timeout: defaults.timeout ?? 60,
-  };
-}
-
-export class LLMClient {
-  private config: LLMConfig;
-
-  constructor(provider?: string) {
-    this.config = loadConfig(provider);
-  }
-
-  async chat(
-    messages: Array<{ role: string; content: string }>,
-    options: Partial<Pick<LLMConfig, 'model' | 'temperature' | 'maxTokens'>> = {}
-  ): Promise<string> {
-    const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.config.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: options.model || this.config.model,
-        messages,
-        temperature: options.temperature ?? this.config.temperature,
-        max_tokens: options.maxTokens ?? this.config.maxTokens,
-      }),
-      signal: AbortSignal.timeout(this.config.timeout * 1000),
-    });
-
-    if (!response.ok) {
-      throw new Error(`LLM request failed: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.choices[0].message.content;
-  }
-}
 ```
 
 ---
@@ -284,8 +205,6 @@ translate:
 
 ### 2.4 模板加载与渲染
 
-**Python 实现**：
-
 ```python
 # llm/prompt.py
 from pathlib import Path
@@ -359,76 +278,6 @@ messages = prompt_manager.render(
 )
 ```
 
-**TypeScript 实现**：
-
-```typescript
-// lib/llm/prompt.ts
-import fs from 'fs';
-import path from 'path';
-import yaml from 'js-yaml';
-
-interface PromptTemplate {
-  name: string;
-  system: string;
-  user: string;
-}
-
-interface Message {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
-}
-
-export class PromptManager {
-  private templates: Map<string, PromptTemplate> = new Map();
-  private configPath: string;
-
-  constructor(configPath?: string) {
-    this.configPath = configPath || path.join(process.cwd(), 'config', 'prompts.yaml');
-    this.loadTemplates();
-  }
-
-  private loadTemplates(): void {
-    const data = yaml.load(fs.readFileSync(this.configPath, 'utf-8')) as Record<string, any>;
-
-    for (const [key, value] of Object.entries(data)) {
-      this.templates.set(key, {
-        name: value.name || key,
-        system: value.system || '',
-        user: value.user || '',
-      });
-    }
-  }
-
-  render(templateName: string, variables: Record<string, string> = {}): Message[] {
-    const template = this.templates.get(templateName);
-    if (!template) {
-      throw new Error(`Template not found: ${templateName}`);
-    }
-
-    const interpolate = (text: string): string => {
-      return text.replace(/\{(\w+)\}/g, (_, key) => variables[key] ?? '');
-    };
-
-    const messages: Message[] = [];
-
-    if (template.system) {
-      messages.push({ role: 'system', content: interpolate(template.system) });
-    }
-
-    if (template.user) {
-      messages.push({ role: 'user', content: interpolate(template.user) });
-    }
-
-    return messages;
-  }
-
-  reload(): void {
-    this.templates.clear();
-    this.loadTemplates();
-  }
-}
-```
-
 ### 2.5 Prefix Cache 友好的设计检查清单
 
 | 检查项 | 说明 |
@@ -478,7 +327,7 @@ response = client.post("/chat/completions", json={
 })
 ```
 
-### 3.2 Pydantic 模型校验（Python）
+### 3.2 Pydantic 模型校验
 
 ```python
 # llm/schemas.py
@@ -544,56 +393,7 @@ def parse_json_response(
         return None
 ```
 
-### 3.3 Zod 模型校验（TypeScript）
-
-```typescript
-// lib/llm/schemas.ts
-import { z } from 'zod';
-
-export const ExtractionResultSchema = z.object({
-  title: z.string().describe('标题'),
-  date: z.string().describe('日期，格式 YYYY-MM-DD'),
-  summary: z.string().max(100).describe('摘要'),
-});
-
-export type ExtractionResult = z.infer<typeof ExtractionResultSchema>;
-
-export const TranslationResultSchema = z.object({
-  text: z.string().describe('翻译后的文本'),
-  sourceLang: z.string().describe('源语言'),
-  targetLang: z.string().describe('目标语言'),
-});
-
-export type TranslationResult = z.infer<typeof TranslationResultSchema>;
-
-
-export function parseJsonResponse<T>(
-  content: string,
-  schema: z.ZodType<T>,
-  strict: boolean = true
-): T | null {
-  try {
-    // 处理 markdown code block
-    let text = content.trim();
-    if (text.startsWith('```')) {
-      const lines = text.split('\n');
-      text = lines.slice(1, -1).join('\n');
-    }
-
-    const data = JSON.parse(text);
-    return schema.parse(data);
-
-  } catch (error) {
-    console.error('JSON 解析或校验失败:', error);
-    if (strict) {
-      throw error;
-    }
-    return null;
-  }
-}
-```
-
-### 3.4 集成到 LLMClient
+### 3.3 集成到 LLMClient
 
 ```python
 # llm/client.py（扩展）
@@ -733,7 +533,7 @@ llm:
 }
 ```
 
-### 4.4 Python 实现
+### 4.4 代码实现
 
 ```python
 # llm/client.py
@@ -776,50 +576,7 @@ class LLMClient:
         return response.json()["choices"][0]["message"]["content"]
 ```
 
-### 4.5 TypeScript 实现
-
-```typescript
-// lib/llm/client.ts
-type ReasoningEffort = 'none' | 'low' | 'medium' | 'high';
-
-interface ChatOptions {
-  model?: string;
-  temperature?: number;
-  maxTokens?: number;
-  reasoningEffort?: ReasoningEffort | null;  // null 表示不支持
-}
-
-export class LLMClient {
-  async chat(messages: Message[], options: ChatOptions = {}): Promise<string> {
-    const payload: Record<string, any> = {
-      model: options.model || this.config.model,
-      messages,
-      temperature: options.temperature ?? this.config.temperature,
-      max_tokens: options.maxTokens ?? this.config.maxTokens,
-    };
-
-    // 关键：null 表示不支持，undefined 表示使用默认值
-    // 只有明确传入字符串值时才添加参数
-    if (options.reasoningEffort !== null && options.reasoningEffort !== undefined) {
-      payload.reasoning_effort = options.reasoningEffort;
-    }
-
-    const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.config.apiKey}`,
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const data = await response.json();
-    return data.choices[0].message.content;
-  }
-}
-```
-
-### 4.6 配置加载与使用
+### 4.5 配置加载与使用
 
 ```python
 # llm/config.py
@@ -891,7 +648,7 @@ result = client.chat(
 )
 ```
 
-### 4.7 模型兼容性速查表
+### 4.6 模型兼容性速查表
 
 | 模型系列 | 支持 reasoning_effort | 备注 |
 |----------|----------------------|------|
@@ -1031,115 +788,10 @@ class LLMClient:
         return response.json()["choices"][0]["message"]["content"]
 ```
 
-### 5.3 TypeScript 重试实现
-
-```typescript
-// lib/llm/retry.ts
-interface RetryOptions {
-  maxRetries?: number;
-  baseDelay?: number;
-  maxDelay?: number;
-  exponentialBase?: number;
-  jitter?: boolean;
-}
-
-const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
-
-export async function withRetry<T>(
-  fn: () => Promise<T>,
-  options: RetryOptions = {}
-): Promise<T> {
-  const {
-    maxRetries = 3,
-    baseDelay = 1000,
-    maxDelay = 60000,
-    exponentialBase = 2,
-    jitter = true,
-  } = options;
-
-  let lastError: Error | null = null;
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (error: any) {
-      lastError = error;
-
-      // 检查是否可重试
-      const status = error.status || error.response?.status;
-      if (status && !RETRYABLE_STATUS_CODES.has(status)) {
-        throw error;
-      }
-
-      // 处理 429 Rate Limit
-      if (status === 429) {
-        const retryAfter = error.headers?.get?.('Retry-After');
-        if (retryAfter) {
-          const delay = parseFloat(retryAfter) * 1000;
-          console.warn(`Rate limited, waiting ${delay}ms`);
-          await sleep(delay);
-          continue;
-        }
-      }
-
-      if (attempt === maxRetries) {
-        console.error(`Max retries (${maxRetries}) exceeded`);
-        throw error;
-      }
-
-      // 计算延迟
-      let delay = Math.min(baseDelay * Math.pow(exponentialBase, attempt), maxDelay);
-      if (jitter) {
-        delay = delay * (0.5 + Math.random());
-      }
-
-      console.warn(`Attempt ${attempt + 1} failed. Retrying in ${delay.toFixed(0)}ms...`);
-      await sleep(delay);
-    }
-  }
-
-  throw lastError;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-
-// 使用示例
-export class LLMClient {
-  async chat(messages: Message[]): Promise<string> {
-    return withRetry(async () => {
-      const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.config.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: this.config.model,
-          messages,
-        }),
-      });
-
-      if (!response.ok) {
-        const error: any = new Error(`HTTP ${response.status}`);
-        error.status = response.status;
-        error.headers = response.headers;
-        throw error;
-      }
-
-      const data = await response.json();
-      return data.choices[0].message.content;
-    }, { maxRetries: 3 });
-  }
-}
-```
-
-### 5.4 超时控制
+### 5.3 超时控制
 
 ```python
-# Python: 使用 httpx 的 timeout 配置
+# 使用 httpx 的 timeout 配置
 client = httpx.Client(
     timeout=httpx.Timeout(
         connect=5.0,      # 连接超时
@@ -1148,21 +800,6 @@ client = httpx.Client(
         pool=5.0,         # 连接池超时
     )
 )
-```
-
-```typescript
-// TypeScript: 使用 AbortSignal
-const controller = new AbortController();
-const timeoutId = setTimeout(() => controller.abort(), 60000);
-
-try {
-  const response = await fetch(url, {
-    signal: controller.signal,
-    // ...
-  });
-} finally {
-  clearTimeout(timeoutId);
-}
 ```
 
 ---
