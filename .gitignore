@@ -74,6 +74,17 @@ dist/
 Thumbs.db
 data/workspace
 
+# 调试和临时文件
+debug_*.json
+debug_*.txt
+debug_*.html
+error_*.json
+temp_*.html
+tmp_*
+
+# 输出文件（根目录）
+output/
+
 # 文档构建
 docs/_build/
 debug
