@@ -32,12 +32,13 @@ router = APIRouter()
 
 
 @router.get("/add_task_by_web", response_class=HTMLResponse)
-async def add_task_by_web():
+async def add_task_by_web(request: Request):
     """Web任务添加页面"""
     try:
         index_file = static_dir / "index.html"
         if index_file.exists():
-            return templates.TemplateResponse("index.html", {"request": Request})
+            content = index_file.read_text(encoding="utf-8")
+            return HTMLResponse(content=content)
         else:
             logger.error("Web任务添加页面文件不存在: %s", index_file)
             return HTMLResponse(
