@@ -13,7 +13,7 @@ import threading
 from typing import Any, Dict, List, Optional
 from ..logging import setup_logger
 from . import normalize_reasoning_effort
-from .llm import call_llm_api, StructuredResult
+from .llm import call_llm_api, LLMCallError, StructuredResult
 from .llm_segmented import SegmentedLLMProcessor
 from .schemas import SPEAKER_MAPPING_SCHEMA
 from .text_segmentation import TextSegmentationProcessor
@@ -596,17 +596,14 @@ class EnhancedLLMProcessor:
                 "内容总结": summary_text,
             }
 
-            # 处理校对失败的情况：在错误信息后附加原始转录文本
-            if result_dict.get("校对文本", "").startswith("【LLM call failed】"):
-                logger.warning(f"分段校对失败，附加原始转录文本: {task_id}")
-                formatted_transcript = self._format_transcript_for_display(transcript)
-                result_dict["校对文本"] = (
-                    f"{result_dict['校对文本']}\n\n"
-                    f"{'=' * 60}\n"
-                    f"以下是原始转录文本：\n"
-                    f"{'=' * 60}\n\n"
-                    f"{formatted_transcript}"
-                )
+            # 检测校对是否成功（用于决定是否保存文件）
+            calibrate_failed = result_dict.get("校对文本", "").startswith("【LLM call failed】")
+            summary_failed = result_dict.get("内容总结", "").startswith("【LLM call failed】")
+
+            # 处理校对失败的情况：记录日志但不再附加原始文本到错误信息
+            if calibrate_failed:
+                logger.warning(f"分段校对失败: {task_id}, 原始错误: {calibrated_text[:200]}")
+                # 不再将错误信息写入文件，保持 calibrate_success=False 让上层决定
             else:
                 result_dict["校对文本"] = self._ensure_min_length(
                     transcript,
@@ -615,17 +612,14 @@ class EnhancedLLMProcessor:
                     context="txt_segmented",
                 )
 
-            # 处理总结失败的情况：在错误信息后附加原始转录文本
-            if result_dict.get("内容总结", "").startswith("【LLM call failed】"):
-                logger.warning(f"分段总结失败，附加原始转录文本: {task_id}")
-                formatted_transcript = self._format_transcript_for_display(transcript)
-                result_dict["内容总结"] = (
-                    f"{result_dict['内容总结']}\n\n"
-                    f"{'=' * 60}\n"
-                    f"以下是原始转录文本：\n"
-                    f"{'=' * 60}\n\n"
-                    f"{formatted_transcript}"
-                )
+            # 处理总结失败的情况：记录日志但不再附加原始文本到错误信息
+            if summary_failed:
+                logger.warning(f"分段总结失败: {task_id}, 原始错误: {summary_text[:200]}")
+                # 不再将错误信息写入文件，保持 summary_success=False 让上层决定
+
+            # 添加成功标记（用于上层判断是否保存文件）
+            result_dict["calibrate_success"] = not calibrate_failed
+            result_dict["summary_success"] = not summary_failed
 
             # 添加统计信息
             original_length = len(transcript)
@@ -739,17 +733,14 @@ class EnhancedLLMProcessor:
                 "内容总结": summary_text,
             }
 
-            # 处理校对失败的情况：在错误信息后附加原始转录文本
-            if result_dict.get("校对文本", "").startswith("【LLM call failed】"):
-                logger.warning(f"JSON分段校对失败，附加原始转录文本: {task_id}")
-                formatted_transcript = self._format_transcript_for_display(transcript)
-                result_dict["校对文本"] = (
-                    f"{result_dict['校对文本']}\n\n"
-                    f"{'=' * 60}\n"
-                    f"以下是原始转录文本：\n"
-                    f"{'=' * 60}\n\n"
-                    f"{formatted_transcript}"
-                )
+            # 检测校对是否成功（用于决定是否保存文件）
+            calibrate_failed = result_dict.get("校对文本", "").startswith("【LLM call failed】")
+            summary_failed = result_dict.get("内容总结", "").startswith("【LLM call failed】")
+
+            # 处理校对失败的情况：记录日志但不再附加原始文本到错误信息
+            if calibrate_failed:
+                logger.warning(f"JSON分段校对失败: {task_id}, 原始错误: {calibrated_text[:200]}")
+                # 不再将错误信息写入文件，保持 calibrate_success=False 让上层决定
             else:
                 result_dict["校对文本"] = self._ensure_min_length(
                     transcript,
@@ -758,17 +749,14 @@ class EnhancedLLMProcessor:
                     context="json_segmented",
                 )
 
-            # 处理总结失败的情况：在错误信息后附加原始转录文本
-            if result_dict.get("内容总结", "").startswith("【LLM call failed】"):
-                logger.warning(f"JSON分段总结失败，附加原始转录文本: {task_id}")
-                formatted_transcript = self._format_transcript_for_display(transcript)
-                result_dict["内容总结"] = (
-                    f"{result_dict['内容总结']}\n\n"
-                    f"{'=' * 60}\n"
-                    f"以下是原始转录文本：\n"
-                    f"{'=' * 60}\n\n"
-                    f"{formatted_transcript}"
-                )
+            # 处理总结失败的情况：记录日志但不再附加原始文本到错误信息
+            if summary_failed:
+                logger.warning(f"JSON分段总结失败: {task_id}, 原始错误: {summary_text[:200]}")
+                # 不再将错误信息写入文件，保持 summary_success=False 让上层决定
+
+            # 添加成功标记（用于上层判断是否保存文件）
+            result_dict["calibrate_success"] = not calibrate_failed
+            result_dict["summary_success"] = not summary_failed
 
             # 添加统计信息
             original_length = len(transcript)
@@ -969,17 +957,15 @@ class EnhancedLLMProcessor:
                 f"文本长度 {original_length} < {min_summary_threshold}，跳过总结"
             )
 
-        # 处理校对失败的情况：在错误信息后附加原始转录文本
-        if result_dict.get("校对文本", "").startswith("【LLM call failed】"):
-            logger.warning(f"校对失败，附加原始转录文本: {task_id}")
-            formatted_transcript = self._format_transcript_for_display(transcript)
-            result_dict["校对文本"] = (
-                f"{result_dict['校对文本']}\n\n"
-                f"{'=' * 60}\n"
-                f"以下是原始转录文本：\n"
-                f"{'=' * 60}\n\n"
-                f"{formatted_transcript}"
-            )
+        # 检测校对是否成功（用于决定是否保存文件）
+        calibrate_failed = result_dict.get("校对文本", "").startswith("【LLM call failed】")
+        summary_content = result_dict.get("内容总结")
+        summary_failed = summary_content and summary_content.startswith("【LLM call failed】")
+
+        # 处理校对失败的情况：记录日志但不再附加原始文本到错误信息
+        if calibrate_failed:
+            logger.warning(f"校对失败: {task_id}, 原始错误: {result_dict.get('校对文本', '')[:200]}")
+            # 不再将错误信息写入文件，保持 calibrate_success=False 让上层决定
         else:
             result_dict["校对文本"] = self._ensure_min_length(
                 transcript,
@@ -988,19 +974,15 @@ class EnhancedLLMProcessor:
                 context="short_txt",
             )
 
-        # 处理总结失败的情况：在错误信息后附加原始转录文本
-        if result_dict.get("内容总结") and result_dict.get("内容总结", "").startswith(
-            "【LLM call failed】"
-        ):
-            logger.warning(f"总结失败，附加原始转录文本: {task_id}")
-            formatted_transcript = self._format_transcript_for_display(transcript)
-            result_dict["内容总结"] = (
-                f"{result_dict['内容总结']}\n\n"
-                f"{'=' * 60}\n"
-                f"以下是原始转录文本：\n"
-                f"{'=' * 60}\n\n"
-                f"{formatted_transcript}"
-            )
+        # 处理总结失败的情况：记录日志但不再附加原始文本到错误信息
+        if summary_failed:
+            logger.warning(f"总结失败: {task_id}, 原始错误: {summary_content[:200]}")
+            # 不再将错误信息写入文件，保持 summary_success=False 让上层决定
+
+        # 添加成功标记（用于上层判断是否保存文件）
+        # 注意：如果跳过总结（skip_summary=True），summary_success 应为 True（视为成功跳过）
+        result_dict["calibrate_success"] = not calibrate_failed
+        result_dict["summary_success"] = not summary_failed if not skip_summary else True
 
         # 计算统计信息
         calibrated_text = result_dict.get("校对文本", "")

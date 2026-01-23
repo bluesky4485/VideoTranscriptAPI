@@ -1042,6 +1042,10 @@ def _handle_llm_task(llm_task: dict):
                 stats = result_dict.get("stats", {})
                 models_used = result_dict.get("models_used", {})
 
+                # 提取成功标记（B1方案：失败时不写文件）
+                calibrate_success = result_dict.get("calibrate_success", True)
+                summary_success = result_dict.get("summary_success", True)
+
                 # 保存 LLM 模型配置到数据库
                 if models_used:
                     cache_manager.update_task_llm_config(task_id, models_used)
@@ -1049,32 +1053,51 @@ def _handle_llm_task(llm_task: dict):
                         f"LLM模型配置已保存: {task_id}, risk_detected={models_used.get('has_risk', False)}"
                     )
 
-                # 保存校对文本到缓存
+                # 保存校对文本到缓存（仅在成功时保存）
                 if platform and media_id:
-                    cache_manager.save_llm_result(
-                        platform=platform,
-                        media_id=media_id,
-                        use_speaker_recognition=use_speaker_recognition,
-                        llm_type="calibrated",
-                        content=calibrated_text,
-                    )
-
-                    # 保存总结文本到缓存
-                    if skip_summary:
-                        summary_content = calibrated_text
-                        logger.info(f"文本过短，保存校对文本作为总结: {task_id}")
+                    if calibrate_success:
+                        cache_manager.save_llm_result(
+                            platform=platform,
+                            media_id=media_id,
+                            use_speaker_recognition=use_speaker_recognition,
+                            llm_type="calibrated",
+                            content=calibrated_text,
+                        )
+                        logger.info(f"校对文本已保存到缓存: {task_id}")
                     else:
-                        summary_content = summary_text
-                        logger.info(f"保存LLM总结到缓存: {task_id}")
+                        logger.warning(f"校对失败，跳过保存校对文件: {task_id}")
 
-                    cache_manager.save_llm_result(
-                        platform=platform,
-                        media_id=media_id,
-                        use_speaker_recognition=use_speaker_recognition,
-                        llm_type="summary",
-                        content=summary_content,
-                    )
-                    logger.info(f"LLM结果已保存到缓存: {platform}/{media_id}")
+                    # 保存总结文本到缓存（仅在成功时保存）
+                    if summary_success:
+                        if skip_summary:
+                            # 跳过总结时，只有校对成功才保存
+                            if calibrate_success:
+                                summary_content = calibrated_text
+                                logger.info(f"文本过短，保存校对文本作为总结: {task_id}")
+                                cache_manager.save_llm_result(
+                                    platform=platform,
+                                    media_id=media_id,
+                                    use_speaker_recognition=use_speaker_recognition,
+                                    llm_type="summary",
+                                    content=summary_content,
+                                )
+                        else:
+                            summary_content = summary_text
+                            logger.info(f"保存LLM总结到缓存: {task_id}")
+                            cache_manager.save_llm_result(
+                                platform=platform,
+                                media_id=media_id,
+                                use_speaker_recognition=use_speaker_recognition,
+                                llm_type="summary",
+                                content=summary_content,
+                            )
+                    else:
+                        logger.warning(f"总结失败，跳过保存总结文件: {task_id}")
+
+                    if calibrate_success or summary_success:
+                        logger.info(f"LLM结果已保存到缓存: {platform}/{media_id}")
+                    else:
+                        logger.warning(f"LLM处理全部失败，未保存任何结果文件: {task_id}")
 
                 # 获取查看链接
                 task_info = cache_manager.get_task_by_id(task_id)

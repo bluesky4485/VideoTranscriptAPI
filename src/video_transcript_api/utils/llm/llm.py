@@ -39,6 +39,31 @@ def get_default_config() -> Optional[Dict[str, Any]]:
 
 
 # ============================================================
+# 异常类定义
+# ============================================================
+
+class LLMCallError(Exception):
+    """
+    LLM 调用失败异常
+
+    当 LLM API 调用在所有重试后仍然失败时抛出此异常。
+    上层调用者应捕获此异常并决定如何处理（如不写入结果文件）。
+
+    Attributes:
+        message: 错误描述
+        last_error: 最后一次尝试的原始异常
+    """
+
+    def __init__(self, message: str, last_error: Optional[Exception] = None):
+        super().__init__(message)
+        self.message = message
+        self.last_error = last_error
+
+    def __str__(self) -> str:
+        return self.message
+
+
+# ============================================================
 # 结构化输出结果类型（解决错误处理问题）
 # ============================================================
 
@@ -306,8 +331,9 @@ def _call_with_text_output(
         if attempt < max_retries:
             time.sleep(retry_delay)
 
-    logger.error(f"[{task_type.upper()}] Failed after {max_retries + 1} attempts | Last error: {last_error}")
-    return f"[LLM call failed] {last_error}"
+    error_msg = f"Failed after {max_retries + 1} attempts | Last error: {last_error}"
+    logger.error(f"[{task_type.upper()}] {error_msg}")
+    raise LLMCallError(error_msg, last_error)
 
 
 def _call_with_json_schema_mode(
