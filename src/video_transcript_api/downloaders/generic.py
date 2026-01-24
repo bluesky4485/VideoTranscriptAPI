@@ -23,6 +23,12 @@ class GenericDownloader(BaseDownloader):
         self.supported_audio_extensions = {'.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac', '.wma'}
         self.supported_video_extensions = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v'}
         self.supported_extensions = self.supported_audio_extensions | self.supported_video_extensions
+
+        # 初始化临时文件目录
+        temp_dir_config = self.config.get("storage", {}).get("temp_dir", "./data/temp")
+        self.temp_dir = os.path.abspath(temp_dir_config)
+        # 确保临时目录存在
+        os.makedirs(self.temp_dir, exist_ok=True)
         
     def can_handle(self, url):
         """
