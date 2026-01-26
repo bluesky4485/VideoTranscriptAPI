@@ -304,8 +304,8 @@ def process_transcription(
         # 合并元数据
         final_metadata = merge_metadata(parsed_metadata, metadata_override, url)
 
-        # 从合并后的元数据中提取字段
-        video_title = final_metadata.get('title', '')
+        # 从合并后的元数据中提取字段（兼容 title 和 video_title 两种字段名）
+        video_title = final_metadata.get('title') or final_metadata.get('video_title', '')
         author = final_metadata.get('author', '')
         description = final_metadata.get('description', '')
         platform = final_metadata.get('platform', 'generic')
