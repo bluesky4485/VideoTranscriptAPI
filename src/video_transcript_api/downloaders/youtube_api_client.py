@@ -177,6 +177,7 @@ class YouTubeApiClient:
             "video_url": video_url,
             "include_audio": include_audio,
             "include_transcript": include_transcript,
+            "priority": "urgent",  # 设置为紧急任务，让服务器优先处理
         }
 
         try:
