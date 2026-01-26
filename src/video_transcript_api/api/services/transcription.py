@@ -141,12 +141,16 @@ def merge_metadata(parsed_metadata: Optional[dict], metadata_override: Optional[
         final_metadata = metadata_override or {}
         logger.info("元数据解析失败或未提供，使用 metadata_override 作为覆盖")
 
-    # 步骤2：填充默认值（如果仍然缺失）
-    final_metadata.setdefault('title', extract_filename_from_url(url) or "Untitled")
+    # 步骤2：填充默认值（如果仍然缺失或为空）
+    # 注意：不能用 setdefault，因为它不会覆盖空字符串或 None
+    if not (final_metadata.get('title') or '').strip():
+        final_metadata['title'] = extract_filename_from_url(url) or "Untitled"
     final_metadata.setdefault('description', "")
-    final_metadata.setdefault('author', "Unknown")
+    if not (final_metadata.get('author') or '').strip():
+        final_metadata['author'] = "Unknown"
     final_metadata.setdefault('platform', 'generic')
-    final_metadata.setdefault('video_id', generate_media_id_from_url(url))
+    if not final_metadata.get('video_id'):
+        final_metadata['video_id'] = generate_media_id_from_url(url)
 
     logger.info(
         "最终元数据: platform=%s, video_id=%s, title=%s, author=%s",
