@@ -101,6 +101,51 @@ class YouTubeApiClient:
 
         logger.info(f"[youtube-api] Client initialized: {self.base_url}")
 
+    def fetch_transcript(self, video_id: str) -> Optional[str]:
+        """
+        仅获取视频字幕（不下载音频）
+
+        该方法是 create_and_wait() 的便捷封装，专门用于获取字幕文本。
+        适用于不需要音频，只需要字幕的场景。
+
+        Args:
+            video_id: YouTube 视频 ID
+
+        Returns:
+            str: 字幕纯文本，如果无字幕则返回 None
+
+        Raises:
+            YouTubeApiError: API 调用失败或视频无字幕
+            YouTubeApiTimeoutError: 任务超时
+            YouTubeApiNetworkError: 网络错误
+        """
+        logger.info(f"[youtube-api] Fetching transcript only: {video_id}")
+
+        # 调用统一接口，但只请求字幕
+        result = self.create_and_wait(
+            video_id=video_id,
+            include_audio=False,
+            include_transcript=True
+        )
+
+        # 检查是否有字幕
+        if not result.has_transcript or not result.transcript:
+            logger.warning(
+                f"[youtube-api] No transcript available for video: {video_id}, "
+                f"audio_fallback={result.audio_fallback}"
+            )
+            return None
+
+        # 下载字幕内容并解析
+        srt_content = self.download_content(result.transcript.url)
+        plain_text = self.parse_srt_to_text(srt_content)
+
+        logger.info(
+            f"[youtube-api] Transcript fetched successfully: {video_id}, "
+            f"length={len(plain_text)} chars, language={result.transcript.language}"
+        )
+        return plain_text
+
     def create_and_wait(
         self,
         video_id: str,

@@ -382,43 +382,96 @@ class YoutubeDownloader(BaseDownloader):
     
     def get_subtitle(self, url):
         """
-        获取字幕，优先使用 youtube-transcript-api
-        
+        获取字幕，按优先级策略执行
+
+        优先级策略：
+        - 如果启用 youtube_api_server：
+          1. youtube_api_server（绕过本地 IP 封禁）
+          2. TikHub API（直接跳转，跳过本地方案）
+        - 如果未启用 youtube_api_server：
+          1. 本地 youtube-transcript-api
+          2. TikHub API（备用）
+
         参数:
             url: 视频URL
-            
+
         返回:
             str: 字幕文本，如果有的话
         """
         try:
             video_id = self._extract_video_id(url)
             if not video_id:
-                logger.warning("无法提取视频ID")
+                logger.warning("[字幕获取] 无法提取视频ID")
                 return None
-            
-            logger.info(f"尝试使用 youtube-transcript-api 获取字幕: {video_id}")
-            
-            # 首先尝试使用 youtube-transcript-api
-            transcript = self._fetch_youtube_transcript(video_id)
-            
-            if transcript and transcript.strip():
-                # 检查是否是IP被阻止的标记
-                if transcript == "IP_BLOCKED":
-                    logger.info(f"检测到IP被阻止，尝试使用TikHub API获取视频 {video_id} 的字幕")
-                    return self._get_subtitle_with_tikhub_api(url)
-                elif transcript == "TRANSCRIPTS_DISABLED":
-                    logger.info(f"视频 {video_id} 字幕已被禁用")
-                    return None
-                else:
-                    logger.info(f"成功使用 youtube-transcript-api 获取字幕，长度: {len(transcript)} 字符")
-                    return transcript
-            
-            # 如果 youtube-transcript-api 失败，尝试使用 TikHub API
-            logger.info(f"youtube-transcript-api 获取失败，尝试使用 TikHub API")
-            return self._get_subtitle_with_tikhub_api(url)
-            
+
+            # ============================================================
+            # 分支 A：启用了 youtube_api_server
+            # ============================================================
+            if self.use_api_server:
+                logger.info(
+                    f"[字幕获取] 使用 youtube_api_server 优先策略: video_id={video_id}"
+                )
+
+                # 尝试通过 API Server 获取字幕
+                try:
+                    transcript = self._youtube_api_client.fetch_transcript(video_id)
+                    if transcript and transcript.strip():
+                        logger.info(
+                            f"[字幕获取] youtube_api_server 成功: "
+                            f"length={len(transcript)} chars"
+                        )
+                        return transcript
+                    else:
+                        logger.warning(
+                            f"[字幕获取] youtube_api_server 返回空字幕: {video_id}"
+                        )
+                except Exception as api_error:
+                    logger.warning(
+                        f"[字幕获取] youtube_api_server 失败: {api_error}, "
+                        f"直接回退到 TikHub API（跳过本地方案）"
+                    )
+
+                # 直接回退到 TikHub API（跳过本地方案）
+                logger.info(
+                    f"[字幕获取] 使用 TikHub API（youtube_api_server 回退）: {video_id}"
+                )
+                return self._get_subtitle_with_tikhub_api(url)
+
+            # ============================================================
+            # 分支 B：未启用 youtube_api_server，使用本地方案
+            # ============================================================
+            else:
+                logger.info(
+                    f"[字幕获取] 使用本地方案: video_id={video_id}"
+                )
+
+                # 首先尝试使用 youtube-transcript-api
+                transcript = self._fetch_youtube_transcript(video_id)
+
+                if transcript and transcript.strip():
+                    # 检查是否是IP被阻止的标记
+                    if transcript == "IP_BLOCKED":
+                        logger.warning(
+                            f"[字幕获取] 本地方案 IP 被封，回退到 TikHub API: {video_id}"
+                        )
+                        return self._get_subtitle_with_tikhub_api(url)
+                    elif transcript == "TRANSCRIPTS_DISABLED":
+                        logger.info(f"[字幕获取] 视频字幕已被禁用: {video_id}")
+                        return None
+                    else:
+                        logger.info(
+                            f"[字幕获取] 本地方案成功: length={len(transcript)} chars"
+                        )
+                        return transcript
+
+                # 如果 youtube-transcript-api 失败，尝试使用 TikHub API
+                logger.info(
+                    f"[字幕获取] 本地方案失败，回退到 TikHub API: {video_id}"
+                )
+                return self._get_subtitle_with_tikhub_api(url)
+
         except Exception as e:
-            logger.exception(f"获取Youtube字幕异常: {str(e)}")
+            logger.exception(f"[字幕获取] 异常: {str(e)}")
             return None
     
     def _fetch_youtube_transcript(self, video_id):
