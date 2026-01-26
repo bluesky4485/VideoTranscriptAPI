@@ -2,9 +2,12 @@
 测试 YouTube 字幕获取的优先级策略
 
 验证场景：
-1. API Server 启用时的优先级：youtube_api_server -> TikHub API
-2. API Server 未启用时的优先级：本地 youtube-transcript-api -> TikHub API
-3. API Server 失败后直接跳转 TikHub（跳过本地方案）
+1. API Server 启用且成功获取字幕
+2. API Server 启用但返回空字幕（视频无字幕）- 不回退到 TikHub
+3. API Server 启用但失败（异常）- 回退到 TikHub
+4. API Server 未启用，本地方案成功
+5. API Server 未启用，本地 IP 被封，回退到 TikHub
+6. 验证优先级配置正确性
 """
 import sys
 import os
@@ -65,17 +68,63 @@ def test_api_server_enabled_success():
     logger.info("")
 
 
-def test_api_server_enabled_failure_fallback_to_tikhub():
+def test_api_server_enabled_no_transcript():
     """
-    测试场景 2：启用 API Server 但失败，直接回退到 TikHub
+    测试场景 2：启用 API Server 但返回空字幕（视频无字幕）
 
     预期：
-    - 调用 youtube_api_server.fetch_transcript() 失败
+    - 调用 youtube_api_server.fetch_transcript() 返回 None
+    - 直接返回 None（不调用 TikHub API）
+    - 理由：API Server 已确认视频无字幕，不需要重试
+    """
+    logger.info("=" * 60)
+    logger.info("Test Case 2: API Server enabled but no transcript available")
+    logger.info("=" * 60)
+
+    # 创建下载器
+    downloader = YoutubeDownloader()
+
+    # 修改配置以启用 API Server
+    downloader.config["youtube_api_server"] = {
+        "enabled": True,
+        "base_url": "http://test-server:8300",
+        "api_key": "test-key",
+        "timeout": 30
+    }
+
+    # Mock youtube_api_client.fetch_transcript() 返回 None（无字幕）
+    downloader._youtube_api_client = Mock()
+    downloader._youtube_api_client.fetch_transcript = Mock(return_value=None)
+
+    # Mock TikHub API（不应该被调用）
+    downloader._get_subtitle_with_tikhub_api = Mock()
+
+    # 测试 URL
+    test_url = "https://www.youtube.com/watch?v=test_video_id"
+
+    # 执行字幕获取
+    result = downloader.get_subtitle(test_url)
+
+    # 验证结果
+    assert result is None, f"Expected: None, Got: {result}"
+    assert downloader._youtube_api_client.fetch_transcript.called, "API Server should be called"
+    assert not downloader._get_subtitle_with_tikhub_api.called, "TikHub should NOT be called when no transcript"
+
+    logger.info("PASS: API Server returned no transcript, correctly skipped TikHub")
+    logger.info("")
+
+
+def test_api_server_enabled_failure_fallback_to_tikhub():
+    """
+    测试场景 3：启用 API Server 但失败（异常），直接回退到 TikHub
+
+    预期：
+    - 调用 youtube_api_server.fetch_transcript() 抛出异常
     - 直接调用 TikHub API（跳过本地 youtube-transcript-api）
     - 返回 TikHub 的字幕文本
     """
     logger.info("=" * 60)
-    logger.info("Test Case 2: API Server enabled but failed, fallback to TikHub")
+    logger.info("Test Case 3: API Server enabled but failed, fallback to TikHub")
     logger.info("=" * 60)
 
     # 创建下载器
@@ -116,7 +165,7 @@ def test_api_server_enabled_failure_fallback_to_tikhub():
 
 def test_api_server_disabled_local_success():
     """
-    测试场景 3：未启用 API Server，使用本地方案成功
+    测试场景 4：未启用 API Server，使用本地方案成功
 
     预期：
     - 不调用 youtube_api_server
@@ -124,7 +173,7 @@ def test_api_server_disabled_local_success():
     - 返回本地获取的字幕文本
     """
     logger.info("=" * 60)
-    logger.info("Test Case 3: API Server disabled, local method success")
+    logger.info("Test Case 4: API Server disabled, local method success")
     logger.info("=" * 60)
 
     # 创建下载器
@@ -155,7 +204,7 @@ def test_api_server_disabled_local_success():
 
 def test_api_server_disabled_local_ip_blocked_fallback_to_tikhub():
     """
-    测试场景 4：未启用 API Server，本地方案 IP 被封，回退到 TikHub
+    测试场景 5：未启用 API Server，本地方案 IP 被封，回退到 TikHub
 
     预期：
     - 调用本地 youtube-transcript-api 返回 IP_BLOCKED
@@ -163,7 +212,7 @@ def test_api_server_disabled_local_ip_blocked_fallback_to_tikhub():
     - 返回 TikHub 的字幕文本
     """
     logger.info("=" * 60)
-    logger.info("Test Case 4: API Server disabled, local IP blocked, fallback to TikHub")
+    logger.info("Test Case 5: API Server disabled, local IP blocked, fallback to TikHub")
     logger.info("=" * 60)
 
     # 创建下载器
@@ -197,12 +246,12 @@ def test_api_server_disabled_local_ip_blocked_fallback_to_tikhub():
 
 def test_subtitle_priority_verification():
     """
-    测试场景 5：验证优先级顺序
+    测试场景 6：验证优先级顺序
 
     验证在不同配置下的调用顺序是否正确
     """
     logger.info("=" * 60)
-    logger.info("Test Case 5: Verify priority order")
+    logger.info("Test Case 6: Verify priority order")
     logger.info("=" * 60)
 
     # 场景 5.1：API Server 启用
@@ -238,6 +287,7 @@ def run_all_tests():
 
     try:
         test_api_server_enabled_success()
+        test_api_server_enabled_no_transcript()
         test_api_server_enabled_failure_fallback_to_tikhub()
         test_api_server_disabled_local_success()
         test_api_server_disabled_local_ip_blocked_fallback_to_tikhub()

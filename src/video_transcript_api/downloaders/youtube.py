@@ -422,20 +422,18 @@ class YoutubeDownloader(BaseDownloader):
                         )
                         return transcript
                     else:
-                        logger.warning(
-                            f"[字幕获取] youtube_api_server 返回空字幕: {video_id}"
+                        # 返回 None 或空字符串 = 视频没有字幕，不需要重试
+                        logger.info(
+                            f"[字幕获取] 视频没有可用字幕（已由 API Server 确认）: {video_id}"
                         )
+                        return None
                 except Exception as api_error:
+                    # 只有失败（异常）时才回退到 TikHub
                     logger.warning(
                         f"[字幕获取] youtube_api_server 失败: {api_error}, "
-                        f"直接回退到 TikHub API（跳过本地方案）"
+                        f"回退到 TikHub API（跳过本地方案）"
                     )
-
-                # 直接回退到 TikHub API（跳过本地方案）
-                logger.info(
-                    f"[字幕获取] 使用 TikHub API（youtube_api_server 回退）: {video_id}"
-                )
-                return self._get_subtitle_with_tikhub_api(url)
+                    return self._get_subtitle_with_tikhub_api(url)
 
             # ============================================================
             # 分支 B：未启用 youtube_api_server，使用本地方案
