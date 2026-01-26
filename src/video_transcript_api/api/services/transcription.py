@@ -557,11 +557,22 @@ def process_transcription(
                         url, use_speaker_recognition
                     )
 
-                    video_title = api_result["video_title"]
-                    author = api_result["author"]
-                    description = api_result["description"]
-                    platform = api_result["platform"]
-                    media_id = api_result["video_id"]
+                    # 将 API 返回的数据作为 parsed_metadata，与 metadata_override 合并
+                    api_metadata = {
+                        'video_id': api_result["video_id"],
+                        'video_title': api_result["video_title"],
+                        'title': api_result["video_title"],  # 字段名标准化
+                        'author': api_result["author"],
+                        'description': api_result["description"],
+                        'platform': api_result["platform"],
+                    }
+                    youtube_merged = merge_metadata(api_metadata, metadata_override, url)
+
+                    video_title = youtube_merged.get('title', '')
+                    author = youtube_merged.get('author', '')
+                    description = youtube_merged.get('description', '')
+                    platform = youtube_merged.get('platform', 'youtube')
+                    media_id = youtube_merged.get('video_id', '')
 
                     if not api_result["need_transcription"]:
                         # 有平台字幕，直接使用
