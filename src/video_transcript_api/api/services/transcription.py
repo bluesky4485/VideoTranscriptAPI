@@ -297,50 +297,47 @@ def process_transcription(
         )
         task_notifier.notify_task_status(display_url, f"开始处理 - {engine_info}")
 
-        # === 新增：元数据解析和合并逻辑 ===
-        parsed_metadata = None
-        metadata_downloader = None
+        # === 步骤1：轻量级提取 platform 和 video_id（用于缓存检查）===
+        import re
 
-        if source_url:
-            try:
-                # 使用 source_url 解析元数据
-                metadata_downloader = create_downloader(source_url)
-                logger.info(f"使用 source_url 解析元数据: {source_url}, 下载器类型: {metadata_downloader.__class__.__name__}")
+        # 优先从 source_url 提取，否则从 url 提取
+        check_url = source_url if source_url else url
 
-                # 只调用 get_video_info 获取元数据，不执行下载
-                parsed_metadata = metadata_downloader.get_video_info(source_url)
-                logger.info(
-                    f"成功从 source_url 解析元数据: platform={parsed_metadata.get('platform')}, "
-                    f"media_id={parsed_metadata.get('video_id')}, title={parsed_metadata.get('video_title', '')[:50]}, "
-                    f"author={parsed_metadata.get('author', 'N/A')}"
-                )
-            except Exception as e:
-                logger.warning(f"解析 source_url 失败: {e}，将使用 metadata_override 作为兜底")
-                parsed_metadata = None
+        platform = None
+        video_id = None
 
-        # 合并元数据
-        final_metadata = merge_metadata(parsed_metadata, metadata_override, url)
+        # 直接用正则表达式提取，不调用下载器（避免触发下载）
+        if 'bilibili.com' in check_url or 'b23.tv' in check_url:
+            match = re.search(r'BV[a-zA-Z0-9]+', check_url)
+            if match:
+                platform = 'bilibili'
+                video_id = match.group(0)
+                logger.info(f"快速提取: platform={platform}, video_id={video_id}")
+        elif 'youtube.com' in check_url or 'youtu.be' in check_url:
+            match = re.search(r'(?:v=|/)([a-zA-Z0-9_-]{11})', check_url)
+            if match:
+                platform = 'youtube'
+                video_id = match.group(1)
+                logger.info(f"快速提取: platform={platform}, video_id={video_id}")
+        elif 'douyin.com' in check_url:
+            match = re.search(r'/video/(\d+)', check_url)
+            if match:
+                platform = 'douyin'
+                video_id = match.group(1)
+                logger.info(f"快速提取: platform={platform}, video_id={video_id}")
 
-        # 从合并后的元数据中提取字段（兼容 title 和 video_title 两种字段名）
-        video_title = final_metadata.get('title') or final_metadata.get('video_title', '')
-        author = final_metadata.get('author', '')
-        description = final_metadata.get('description', '')
-        platform = final_metadata.get('platform', 'generic')
-        video_id = final_metadata.get('video_id', generate_media_id_from_url(url))
-        media_id = video_id  # media_id 是 video_id 的别名，保持兼容性
+        # 如果无法快速提取，标记为 generic
+        if not platform or not video_id:
+            platform = 'generic'
+            video_id = generate_media_id_from_url(url)
+            logger.info(f"无法快速提取，使用通用标识: platform={platform}, video_id={video_id}")
 
-        # 实际下载使用 GenericDownloader（统一处理）
-        from ...downloaders.generic import GenericDownloader
-        downloader = GenericDownloader()
-
-        # 标记是否使用了通用下载器（用于后续逻辑）
-        is_generic_downloader = platform == 'generic'
-        is_from_generic = is_generic_downloader
-
-        # 检查缓存
+        # 步骤2：检查缓存（在调用 get_video_info 之前）
         cache_data = None
+        is_generic_downloader = platform == 'generic'
+
         if video_id and platform and not is_generic_downloader:
-            logger.info(f"从URL中解析出平台: {platform}，视频ID: {video_id}")
+            logger.info(f"检查缓存: platform={platform}, video_id={video_id}")
             cache_data = cache_manager.get_cache(
                 platform=platform,
                 media_id=video_id,
@@ -548,19 +545,60 @@ def process_transcription(
         else:
             logger.info("未找到缓存，准备下载和转录")
 
+            # 步骤3：缓存未命中，获取完整元数据
+            parsed_metadata = None
+            metadata_downloader = None
+            parse_url = source_url if source_url else url
+
+            try:
+                metadata_downloader = create_downloader(parse_url)
+                logger.info(f"获取完整元数据: {parse_url}, 下载器类型: {metadata_downloader.__class__.__name__}")
+                parsed_metadata = metadata_downloader.get_video_info(parse_url)
+                logger.info(
+                    f"成功获取元数据: platform={parsed_metadata.get('platform')}, "
+                    f"media_id={parsed_metadata.get('video_id')}, title={parsed_metadata.get('video_title', '')[:50]}"
+                )
+            except Exception as e:
+                logger.warning(f"获取元数据失败: {e}")
+                parsed_metadata = None
+
+            # 合并元数据
+            if parsed_metadata:
+                final_metadata = merge_metadata(parsed_metadata, metadata_override, url)
+                video_title = final_metadata.get('title') or final_metadata.get('video_title', '')
+                author = final_metadata.get('author', '')
+                description = final_metadata.get('description', '')
+                # 更新 platform 和 video_id（用完整数据覆盖快速提取的值）
+                platform = final_metadata.get('platform', platform)
+                video_id = final_metadata.get('video_id', video_id)
+            else:
+                # 元数据获取失败，使用默认值
+                video_title = extract_filename_from_url(url) or "Untitled"
+                author = "Unknown"
+                description = ""
+
+            media_id = video_id
+            is_from_generic = (platform == 'generic')
+            logger.info(f"最终元数据: platform={platform}, video_id={video_id}, title={video_title[:50]}")
+
+            # 创建下载器
+            from ...downloaders.generic import GenericDownloader
+            downloader = GenericDownloader()
+
             # ========== YouTube API Server 快速路径 ==========
             # 如果是 YouTube URL 且启用了 API Server，使用一次请求获取所有资源
             if (
-                downloader.__class__.__name__ == "YoutubeDownloader"
-                and hasattr(downloader, "use_api_server")
-                and downloader.use_api_server
+                metadata_downloader
+                and metadata_downloader.__class__.__name__ == "YoutubeDownloader"
+                and hasattr(metadata_downloader, "use_api_server")
+                and metadata_downloader.use_api_server
             ):
                 logger.info(f"[youtube-api] Using API Server for: {url}")
                 try:
                     from ...downloaders.youtube_api_errors import YouTubeApiError
 
                     # 一次 API 请求获取所有信息
-                    api_result = downloader.fetch_for_transcription(
+                    api_result = metadata_downloader.fetch_for_transcription(
                         url, use_speaker_recognition
                     )
 
