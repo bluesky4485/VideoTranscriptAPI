@@ -155,6 +155,16 @@ class KeyInfoExtractor:
                 f"{len(key_info.brands)} brands"
             )
 
+            # Debug: 显示详细的提取结果
+            logger.debug(f"[KEY_INFO] Extracted details for {title}:")
+            logger.debug(f"[KEY_INFO]   Names: {key_info.names}")
+            logger.debug(f"[KEY_INFO]   Places: {key_info.places}")
+            logger.debug(f"[KEY_INFO]   Technical terms: {key_info.technical_terms}")
+            logger.debug(f"[KEY_INFO]   Brands: {key_info.brands}")
+            logger.debug(f"[KEY_INFO]   Abbreviations: {key_info.abbreviations}")
+            logger.debug(f"[KEY_INFO]   Foreign terms: {key_info.foreign_terms}")
+            logger.debug(f"[KEY_INFO]   Other entities: {key_info.other_entities}")
+
             return key_info
 
         except Exception as e:

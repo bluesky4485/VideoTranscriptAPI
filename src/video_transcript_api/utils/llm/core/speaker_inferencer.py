@@ -126,6 +126,11 @@ class SpeakerInferencer:
 
             logger.info(f"Speaker inference completed: {speaker_mapping}")
 
+            # Debug: 显示详细的推断结果
+            logger.debug(f"[SPEAKER_INFERENCE] Result for {title}:")
+            for speaker_id, speaker_name in speaker_mapping.items():
+                logger.debug(f"[SPEAKER_INFERENCE]   {speaker_id} -> {speaker_name}")
+
             return speaker_mapping
 
         except Exception as e:
