@@ -46,13 +46,26 @@ llm_executor = get_llm_executor()
 executor = get_executor()
 
 
+class MetadataOverride(BaseModel):
+    """元数据覆盖模型"""
+    title: Optional[str] = Field(None, description="视频标题")
+    description: Optional[str] = Field(None, description="视频描述")
+    author: Optional[str] = Field(None, description="视频作者")
+
+
 class TranscribeRequest(BaseModel):
     """转录请求数据模型"""
 
-    url: str = Field(..., description="视频URL")
+    url: str = Field(..., description="视频URL（实际下载地址）")
     use_speaker_recognition: bool = Field(False, description="是否使用说话人识别功能")
     wechat_webhook: Optional[str] = Field(
         None, description="企业微信webhook地址，用于发送通知"
+    )
+    source_url: Optional[str] = Field(
+        None, description="原始视频URL（用于解析平台和元数据）"
+    )
+    metadata_override: Optional[MetadataOverride] = Field(
+        None, description="元数据覆盖（用于补充或覆盖解析的元数据）"
     )
 
 
@@ -62,6 +75,98 @@ class TranscribeResponse(BaseModel):
     code: int = Field(200, description="状态码")
     message: str = Field("success", description="状态信息")
     data: Optional[Dict[str, Any]] = Field(None, description="响应数据")
+
+
+def extract_filename_from_url(url: str) -> str:
+    """
+    从URL中提取文件名
+
+    参数:
+        url: URL地址
+
+    返回:
+        str: 提取的文件名，如果无法提取则返回空字符串
+    """
+    try:
+        from urllib.parse import urlparse, unquote
+        parsed_url = urlparse(url)
+        path = unquote(parsed_url.path)
+        filename = os.path.basename(path)
+        # 移除扩展名
+        if filename:
+            return os.path.splitext(filename)[0]
+        return ""
+    except Exception:
+        return ""
+
+
+def generate_media_id_from_url(url: str) -> str:
+    """
+    从URL生成唯一的media_id
+
+    参数:
+        url: URL地址
+
+    返回:
+        str: 16位哈希字符串
+    """
+    import hashlib
+    return hashlib.md5(url.encode()).hexdigest()[:16]
+
+
+def merge_metadata(parsed_metadata: Optional[dict], metadata_override: Optional[dict], url: str) -> dict:
+    """
+    合并解析的元数据和用户提供的元数据覆盖
+
+    参数:
+        parsed_metadata: 从source_url解析的元数据（可能为None）
+        metadata_override: 用户提供的元数据覆盖（可能为None）
+        url: 实际下载URL（用于生成默认值）
+
+    返回:
+        dict: 合并后的完整元数据
+    """
+    # 步骤1：元数据合并
+    if parsed_metadata is not None:
+        # 解析成功：metadata_override 作为补充
+        # 注意：过滤掉 metadata_override 中的 None 值和空字符串，避免覆盖解析出的有效值
+        filtered_override = {
+            k: v
+            for k, v in (metadata_override or {}).items()
+            if v is not None and (not isinstance(v, str) or v.strip())
+        }
+        final_metadata = {**parsed_metadata, **filtered_override}
+        logger.info("元数据解析成功，使用 metadata_override 作为补充")
+
+        # 字段名标准化：将 video_title 映射为 title（如果存在）
+        if 'video_title' in final_metadata and 'title' not in final_metadata:
+            final_metadata['title'] = final_metadata['video_title']
+            logger.debug("已将 video_title 映射为 title")
+    else:
+        # 解析失败或未提供：metadata_override 作为覆盖
+        final_metadata = metadata_override or {}
+        logger.info("元数据解析失败或未提供，使用 metadata_override 作为覆盖")
+
+    # 步骤2：填充默认值（如果仍然缺失或为空）
+    # 注意：不能用 setdefault，因为它不会覆盖空字符串或 None
+    if not (final_metadata.get('title') or '').strip():
+        final_metadata['title'] = extract_filename_from_url(url) or "Untitled"
+    final_metadata.setdefault('description', "")
+    if not (final_metadata.get('author') or '').strip():
+        final_metadata['author'] = "Unknown"
+    final_metadata.setdefault('platform', 'generic')
+    if not final_metadata.get('video_id'):
+        final_metadata['video_id'] = generate_media_id_from_url(url)
+
+    logger.info(
+        "最终元数据: platform=%s, video_id=%s, title=%s, author=%s",
+        final_metadata['platform'],
+        final_metadata['video_id'],
+        final_metadata['title'][:50],
+        final_metadata['author']
+    )
+
+    return final_metadata
 
 
 async def verify_token(authorization: str = Header(None), request: Request = None):
@@ -100,13 +205,15 @@ async def process_task_queue():
             url = task["url"]
             use_speaker_recognition = task.get("use_speaker_recognition", False)
             wechat_webhook = task.get("wechat_webhook")
+            source_url = task.get("source_url")
+            metadata_override = task.get("metadata_override")
 
             try:
                 task_results[task_id] = {
                     "status": "processing",
                     "message": "正在处理转录任务",
                 }
-                cache_manager.update_task_status(task_id, "processing")
+                cache_manager.update_task_status(task_id, "processing", source_url=source_url)
 
                 future = executor.submit(
                     process_transcription,
@@ -114,6 +221,8 @@ async def process_task_queue():
                     url,
                     use_speaker_recognition,
                     wechat_webhook,
+                    source_url,
+                    metadata_override,
                 )
 
                 def task_completed(future_result):
@@ -130,7 +239,9 @@ async def process_task_queue():
                             "message": f"转录任务失败: {exc}",
                             "error": str(exc),
                         }
-                        WechatNotifier().notify_task_status(url, "转录失败", str(exc))
+                        # 优先使用 source_url 用于通知显示
+                        display_url = source_url or url
+                        WechatNotifier().notify_task_status(display_url, "转录失败", str(exc))
 
                 future.add_done_callback(task_completed)
                 logger.info(f"任务已提交到线程池: {task_id}, URL: {url}")
@@ -151,11 +262,30 @@ async def process_task_queue():
 
 
 def process_transcription(
-    task_id, url, use_speaker_recognition=False, wechat_webhook=None
+    task_id, url, use_speaker_recognition=False, wechat_webhook=None,
+    source_url=None, metadata_override=None
 ):
-    """处理视频转录"""
+    """
+    处理视频转录
+
+    参数:
+        task_id: 任务ID
+        url: 实际下载地址
+        use_speaker_recognition: 是否使用说话人识别
+        wechat_webhook: 企业微信webhook
+        source_url: 原始视频URL（用于解析平台和元数据）
+        metadata_override: 元数据覆盖（dict）
+    """
     try:
-        logger.info(f"开始处理转录任务: {task_id}, URL: {url}")
+        # 规范化 source_url：将空字符串转换为 None
+        if source_url is not None and isinstance(source_url, str) and not source_url.strip():
+            source_url = None
+
+        logger.info(f"开始处理转录任务: {task_id}, URL: {url}, source_url: {source_url}")
+
+        # 优先使用 source_url 用于通知显示（保持原始平台链接的可读性）
+        display_url = source_url or url
+        logger.info(f"企业微信通知将使用URL: {display_url}")
 
         task_notifier = (
             WechatNotifier(wechat_webhook) if wechat_webhook else WechatNotifier()
@@ -163,49 +293,50 @@ def process_transcription(
         engine_info = (
             "说话人识别(FunASR)" if use_speaker_recognition else "普通转录(CapsWriter)"
         )
-        task_notifier.notify_task_status(url, f"开始处理 - {engine_info}")
+        task_notifier.notify_task_status(display_url, f"开始处理 - {engine_info}")
 
-        downloader = create_downloader(url)
-        if not downloader:
-            error_msg = f"不支持的URL类型: {url}"
-            logger.error(error_msg)
-            task_notifier.notify_task_status(url, "下载失败", error_msg)
-            return {"status": "failed", "message": error_msg}
+        # === 新增：元数据解析和合并逻辑 ===
+        parsed_metadata = None
+        metadata_downloader = None
 
-        is_generic_downloader = downloader.__class__.__name__ == "GenericDownloader"
-
-        platform = None
-        video_id = None
-        downloader_class_name = downloader.__class__.__name__
-        if downloader_class_name == "DouyinDownloader":
-            platform = "douyin"
-            video_id = downloader.extract_video_id(url)
-        elif downloader_class_name == "BilibiliDownloader":
-            platform = "bilibili"
-            video_id = downloader.extract_video_id(url)
-        elif downloader_class_name == "XiaohongshuDownloader":
-            platform = "xiaohongshu"
+        if source_url:
             try:
-                video_id = downloader.extract_note_id(url)
-            except Exception:
-                logger.warning(f"预先提取小红书笔记ID失败，将在下载器中处理: {url}")
-                video_id = None
-        elif downloader_class_name == "YoutubeDownloader":
-            platform = "youtube"
-            video_id = downloader.extract_video_id(url)
-        elif downloader_class_name == "XiaoyuzhouDownloader":
-            platform = "xiaoyuzhou"
-            video_id = downloader.extract_video_id(url)
-        elif downloader_class_name == "GenericDownloader":
-            platform = "generic"
-            video_id = downloader.extract_video_id(url)
+                # 使用 source_url 解析元数据
+                metadata_downloader = create_downloader(source_url)
+                logger.info(f"使用 source_url 解析元数据: {source_url}, 下载器类型: {metadata_downloader.__class__.__name__}")
 
-        video_title = ""
-        author = ""
-        description = ""
-        is_from_generic = False
+                # 只调用 get_video_info 获取元数据，不执行下载
+                parsed_metadata = metadata_downloader.get_video_info(source_url)
+                logger.info(
+                    f"成功从 source_url 解析元数据: platform={parsed_metadata.get('platform')}, "
+                    f"media_id={parsed_metadata.get('video_id')}, title={parsed_metadata.get('video_title', '')[:50]}, "
+                    f"author={parsed_metadata.get('author', 'N/A')}"
+                )
+            except Exception as e:
+                logger.warning(f"解析 source_url 失败: {e}，将使用 metadata_override 作为兜底")
+                parsed_metadata = None
+
+        # 合并元数据
+        final_metadata = merge_metadata(parsed_metadata, metadata_override, url)
+
+        # 从合并后的元数据中提取字段（兼容 title 和 video_title 两种字段名）
+        video_title = final_metadata.get('title') or final_metadata.get('video_title', '')
+        author = final_metadata.get('author', '')
+        description = final_metadata.get('description', '')
+        platform = final_metadata.get('platform', 'generic')
+        video_id = final_metadata.get('video_id', generate_media_id_from_url(url))
+        media_id = video_id  # media_id 是 video_id 的别名，保持兼容性
+
+        # 实际下载使用 GenericDownloader（统一处理）
+        from ...downloaders.generic import GenericDownloader
+        downloader = GenericDownloader()
+
+        # 标记是否使用了通用下载器（用于后续逻辑）
+        is_generic_downloader = platform == 'generic'
+        is_from_generic = is_generic_downloader
+
+        # 检查缓存
         cache_data = None
-
         if video_id and platform and not is_generic_downloader:
             logger.info(f"从URL中解析出平台: {platform}，视频ID: {video_id}")
             cache_data = cache_manager.get_cache(
@@ -242,7 +373,7 @@ def process_transcription(
                 cache_type = "含说话人识别" if has_speaker_recognition else "普通转录"
                 engine_info = "FunASR" if has_speaker_recognition else "CapsWriter"
                 task_notifier.notify_task_status(
-                    url,
+                    display_url,
                     f"使用已有缓存({cache_type}-{engine_info}，含LLM结果)",
                     title=video_title,
                     author=author,
@@ -299,7 +430,7 @@ def process_transcription(
                 # 发送（跳过自动添加的内容类型标题）
                 send_long_text_wechat(
                     title=video_title,
-                    url=url,
+                    url=display_url,
                     text=full_message,
                     is_summary=not skip_summary,
                     has_speaker_recognition=has_speaker_recognition,
@@ -318,7 +449,7 @@ def process_transcription(
                     view_url = f"{base_url}/view/{task_info['view_token']}"
 
                     # 使用限流系统发送完成通知，确保顺序正确
-                    clean_url = WechatNotifier()._clean_url(url)
+                    clean_url = WechatNotifier()._clean_url(display_url)
 
                     # 对标题进行风控处理
                     sanitized_title = video_title
@@ -351,6 +482,7 @@ def process_transcription(
                     title=video_title,
                     author=author,
                     cache_id=cache_data.get("cache_id"),
+                    source_url=source_url,
                 )
 
                 return {
@@ -366,7 +498,7 @@ def process_transcription(
                 }
 
             task_notifier.notify_task_status(
-                url,
+                display_url,
                 "使用已有缓存",
                 title=video_title,
                 author=author,
@@ -378,6 +510,7 @@ def process_transcription(
                     {
                         "task_id": task_id,
                         "url": url,
+                        "display_url": display_url,
                         "platform": cache_data.get("platform"),
                         "media_id": cache_data.get("media_id"),
                         "video_title": video_title,
@@ -429,11 +562,22 @@ def process_transcription(
                         url, use_speaker_recognition
                     )
 
-                    video_title = api_result["video_title"]
-                    author = api_result["author"]
-                    description = api_result["description"]
-                    platform = api_result["platform"]
-                    media_id = api_result["video_id"]
+                    # 将 API 返回的数据作为 parsed_metadata，与 metadata_override 合并
+                    api_metadata = {
+                        'video_id': api_result["video_id"],
+                        'video_title': api_result["video_title"],
+                        'title': api_result["video_title"],  # 字段名标准化
+                        'author': api_result["author"],
+                        'description': api_result["description"],
+                        'platform': api_result["platform"],
+                    }
+                    youtube_merged = merge_metadata(api_metadata, metadata_override, url)
+
+                    video_title = youtube_merged.get('title', '')
+                    author = youtube_merged.get('author', '')
+                    description = youtube_merged.get('description', '')
+                    platform = youtube_merged.get('platform', 'youtube')
+                    media_id = youtube_merged.get('video_id', '')
 
                     if not api_result["need_transcription"]:
                         # 有平台字幕，直接使用
@@ -443,7 +587,7 @@ def process_transcription(
                         )
 
                         task_notifier.notify_task_status(
-                            url,
+                            display_url,
                             "平台字幕获取成功 - 使用 YouTube API Server",
                             title=video_title,
                             author=author,
@@ -472,6 +616,7 @@ def process_transcription(
                                 {
                                     "task_id": task_id,
                                     "url": url,
+                                    "display_url": display_url,
                                     "platform": platform,
                                     "media_id": media_id,
                                     "video_title": video_title,
@@ -497,6 +642,7 @@ def process_transcription(
                             media_id=media_id,
                             title=video_title,
                             author=author,
+                            source_url=source_url,
                         )
                         return {
                             "status": "success",
@@ -515,7 +661,7 @@ def process_transcription(
                         )
 
                         task_notifier.notify_task_status(
-                            url,
+                            display_url,
                             f"正在转录音视频 - {engine_info}",
                             title=video_title,
                             author=author,
@@ -576,7 +722,7 @@ def process_transcription(
                             )
 
                         task_notifier.notify_task_status(
-                            url,
+                            display_url,
                             f"转录完成 - {engine_info}",
                             title=video_title,
                             author=author,
@@ -589,6 +735,7 @@ def process_transcription(
                                 {
                                     "task_id": task_id,
                                     "url": url,
+                                    "display_url": display_url,
                                     "platform": platform,
                                     "media_id": media_id,
                                     "video_title": video_title,
@@ -619,6 +766,7 @@ def process_transcription(
                             media_id=media_id,
                             title=video_title,
                             author=author,
+                            source_url=source_url,
                         )
                         return {
                             "status": "success",
@@ -635,44 +783,77 @@ def process_transcription(
                     # API Server 失败，不降级，直接返回错误
                     error_msg = f"YouTube API Server error: [{api_error.code}] {api_error.message}"
                     logger.error(f"[youtube-api] {error_msg}")
-                    task_notifier.notify_task_status(url, "下载失败", error_msg)
+                    task_notifier.notify_task_status(display_url, "下载失败", error_msg)
                     return {"status": "failed", "message": error_msg}
 
                 except Exception as exc:
                     # 其他异常也不降级
                     error_msg = f"YouTube API Server unexpected error: {exc}"
                     logger.exception(f"[youtube-api] {error_msg}")
-                    task_notifier.notify_task_status(url, "下载失败", error_msg)
+                    task_notifier.notify_task_status(display_url, "下载失败", error_msg)
                     return {"status": "failed", "message": error_msg}
 
             # ========== 原有逻辑（非 YouTube API Server 路径）==========
-            video_info = downloader.get_video_info(url)
-            if not video_info:
-                raise ValueError("下载器未返回视频信息")
+            # 如果没有提供 source_url，则使用传统方式获取视频信息
+            if not source_url:
+                logger.info("未提供 source_url，使用传统下载器获取视频信息")
+                original_downloader = create_downloader(url)
+                video_info = original_downloader.get_video_info(url)
+                if not video_info:
+                    raise ValueError("下载器未返回视频信息")
 
-            video_title = video_info.get("video_title", "")
-            author = video_info.get("author", "")
-            description = video_info.get("description", "")
-            is_from_generic = video_info.get("is_generic", False)
+                video_title = video_info.get("video_title", "")
+                author = video_info.get("author", "")
+                description = video_info.get("description", "")
+                is_from_generic = video_info.get("is_generic", False)
+                platform = video_info.get("platform")
+                video_id = video_info.get("video_id")
+                media_id = video_id  # 保持兼容性
+            else:
+                logger.info("已提供 source_url，使用解析的元数据，跳过传统下载器的 get_video_info")
+                # video_title, author, description, platform, video_id, media_id 已在前面设置
+
+            # 判断是否同时提供了 url 和 source_url
+            # 如果同时提供且不同，说明 url 是直接下载地址，source_url 仅用于元数据解析
+            has_separate_download_url = (
+                source_url is not None and
+                source_url.strip() != "" and
+                source_url != url
+            )
 
             # 根据 use_speaker_recognition 参数决定处理优先级
             subtitle = None
 
-            if use_speaker_recognition:
+            if has_separate_download_url:
+                # 同时提供了 url 和 source_url，说明用户已有下载地址
+                # 跳过字幕获取，直接使用 url 进行下载和转录
+                logger.info(
+                    f"检测到提供了独立的下载地址，跳过字幕获取，直接使用 url 进行转录: "
+                    f"url={url}, source_url={source_url}"
+                )
+                subtitle = None
+            elif use_speaker_recognition:
                 # 如果需要说话人识别，强制跳过平台字幕，直接进行下载转录
                 logger.info(f"需要说话人识别，跳过平台字幕获取，强制下载转录: {url}")
+                subtitle = None
             else:
                 # 只有在不需要说话人识别时，才尝试获取平台字幕
-                if downloader.__class__.__name__ == "YoutubeDownloader":
-                    logger.info(f"不需要说话人识别，尝试获取YouTube平台字幕: {url}")
-                    subtitle = downloader.get_subtitle(url)
+                if metadata_downloader and metadata_downloader.__class__.__name__ == "YoutubeDownloader" and source_url:
+                    logger.info(f"不需要说话人识别，尝试从 source_url 获取YouTube平台字幕: {source_url}")
+                    subtitle = metadata_downloader.get_subtitle(source_url)
+                elif not source_url:
+                    # 如果没有 source_url，使用原有逻辑
+                    original_downloader = create_downloader(url)
+                    if original_downloader.__class__.__name__ == "YoutubeDownloader":
+                        logger.info(f"不需要说话人识别，尝试获取YouTube平台字幕: {url}")
+                        subtitle = original_downloader.get_subtitle(url)
 
             if subtitle:
                 # 如果有字幕，直接使用
                 logger.info(f"使用平台提供的字幕: {url}")
 
                 task_notifier.notify_task_status(
-                    url,
+                    display_url,
                     "平台字幕获取成功 - 直接使用平台字幕",
                     title=video_title,
                     author=author,
@@ -700,6 +881,7 @@ def process_transcription(
                         {
                             "task_id": task_id,
                             "url": url,
+                            "display_url": display_url,
                             "platform": video_info.get("platform"),
                             "media_id": video_info.get("video_id"),
                             "video_title": video_title,
@@ -730,57 +912,74 @@ def process_transcription(
                 cache_manager.update_task_status(
                     task_id,
                     "success",
-                    platform=video_info.get("platform"),
-                    media_id=video_info.get("video_id"),
+                    platform=platform,
+                    media_id=video_id,
                     title=video_title,
                     author=author,
+                    source_url=source_url,
                 )
                 return result
             else:
                 # 没有字幕，需要下载音视频并转录
                 logger.info(f"下载视频进行转录: {url}")
                 task_notifier.notify_task_status(
-                    url,
+                    display_url,
                     f"正在下载视频 - {engine_info}",
                     title=video_title,
                     author=author,
                 )
 
-                # 检查是否已通过BBDown下载
+                # 如果提供了 source_url，说明使用本地文件，直接下载
                 local_file = None
-                if video_info.get("downloaded") and video_info.get("local_file"):
-                    # 使用BBDown已下载的文件
-                    local_file = video_info.get("local_file")
-                    logger.info(f"使用BBDown已下载的文件: {local_file}")
-                else:
-                    # 常规下载流程
-                    download_url = video_info.get("download_url")
-                    filename = video_info.get("filename")
+                if source_url:
+                    # 使用 GenericDownloader 下载文件
+                    logger.info(f"使用 GenericDownloader 下载文件: {url}")
+                    # 从 URL 提取文件名
+                    from urllib.parse import urlparse, unquote
+                    parsed_url = urlparse(url)
+                    path = unquote(parsed_url.path)
+                    filename = os.path.basename(path)
+                    if not filename:
+                        # 如果无法提取文件名，生成一个
+                        filename = f"{platform}_{video_id}.mp4"
 
-                    # 如果是YouTube链接，使用优先级下载方式（yt-dlp优先，TikHub备用）
-                    if hasattr(downloader, "download_video_with_priority") and (
-                        "youtube.com" in url or "youtu.be" in url
-                    ):
-                        logger.info(f"YouTube视频，使用优先级下载（yt-dlp优先）: {url}")
-                        local_file = downloader.download_video_with_priority(
-                            url, video_info
-                        )
-                    elif download_url and filename:
-                        # 其他平台使用常规下载流程
-                        local_file = downloader.download_file(download_url, filename)
+                    local_file = downloader.download_file(url, filename)
+                else:
+                    # 传统逻辑：检查是否已通过BBDown下载
+                    if video_info.get("downloaded") and video_info.get("local_file"):
+                        # 使用BBDown已下载的文件
+                        local_file = video_info.get("local_file")
+                        logger.info(f"使用BBDown已下载的文件: {local_file}")
                     else:
-                        error_msg = f"无法获取下载信息: {url}"
-                        logger.error(error_msg)
-                        task_notifier.notify_task_status(
-                            url, "下载失败", error_msg, title=video_title, author=author
-                        )
-                        return {"status": "failed", "message": error_msg}
+                        # 常规下载流程
+                        download_url = video_info.get("download_url")
+                        filename = video_info.get("filename")
+
+                        # 如果是YouTube链接，使用优先级下载方式（yt-dlp优先，TikHub备用）
+                        original_downloader = create_downloader(url)
+                        if hasattr(original_downloader, "download_video_with_priority") and (
+                            "youtube.com" in url or "youtu.be" in url
+                        ):
+                            logger.info(f"YouTube视频，使用优先级下载（yt-dlp优先）: {url}")
+                            local_file = original_downloader.download_video_with_priority(
+                                url, video_info
+                            )
+                        elif download_url and filename:
+                            # 其他平台使用常规下载流程
+                            local_file = original_downloader.download_file(download_url, filename)
+                        else:
+                            error_msg = f"无法获取下载信息: {url}"
+                            logger.error(error_msg)
+                            task_notifier.notify_task_status(
+                                display_url, "下载失败", error_msg, title=video_title, author=author
+                            )
+                            return {"status": "failed", "message": error_msg}
 
                 if not local_file:
                     error_msg = f"下载文件失败: {url}"
                     logger.error(error_msg)
                     task_notifier.notify_task_status(
-                        url, "下载失败", error_msg, title=video_title, author=author
+                        display_url, "下载失败", error_msg, title=video_title, author=author
                     )
                     return {"status": "failed", "message": error_msg}
 
@@ -788,15 +987,13 @@ def process_transcription(
                     # 开始转录
                     logger.info(f"开始转录音视频: {local_file}")
                     task_notifier.notify_task_status(
-                        url,
+                        display_url,
                         f"正在转录音视频 - {engine_info}",
                         title=video_title,
                         author=author,
                     )
 
-                    # 获取平台和媒体ID
-                    platform = video_info.get("platform")
-                    media_id = video_info.get("video_id")
+                    # platform 和 video_id 已在前面设置
 
                     # 根据是否需要说话人识别选择转录器
                     if use_speaker_recognition:
@@ -864,7 +1061,7 @@ def process_transcription(
 
                     # 通知转录完成，包含转录文本预览和服务器类型信息
                     task_notifier.notify_task_status(
-                        url,
+                        display_url,
                         f"转录完成 - {engine_info}",
                         title=video_title,
                         author=author,
@@ -877,6 +1074,7 @@ def process_transcription(
                             {
                                 "task_id": task_id,
                                 "url": url,
+                                "display_url": display_url,
                                 "platform": platform,
                                 "media_id": media_id,
                                 "video_title": video_title,
@@ -918,20 +1116,23 @@ def process_transcription(
                 cache_manager.update_task_status(
                     task_id,
                     "success",
-                    platform=video_info.get("platform"),
-                    media_id=video_info.get("video_id"),
+                    platform=platform,
+                    media_id=video_id,
                     title=video_title,
                     author=author,
+                    source_url=source_url,
                 )
 
         return result
     except Exception as exc:
         logger.exception(f"转录处理异常: {exc}")
+        # 优先使用 source_url 用于通知显示
+        display_url = source_url or url
         task_notifier = (
             WechatNotifier(wechat_webhook) if wechat_webhook else WechatNotifier()
         )
-        task_notifier.notify_task_status(url, "转录异常", str(exc))
-        cache_manager.update_task_status(task_id, "failed")
+        task_notifier.notify_task_status(display_url, "转录异常", str(exc))
+        cache_manager.update_task_status(task_id, "failed", source_url=source_url)
         return {
             "status": "failed",
             "message": f"转录任务异常: {exc}",
@@ -970,6 +1171,8 @@ def _handle_llm_task(llm_task: dict):
     try:
         with task_lock(task_id):
             url = llm_task["url"]
+            # 优先使用 display_url 用于通知显示
+            display_url = llm_task.get("display_url", url)
             platform = llm_task.get("platform")
             media_id = llm_task.get("media_id")
             video_title = llm_task["video_title"]
@@ -1042,6 +1245,10 @@ def _handle_llm_task(llm_task: dict):
                 stats = result_dict.get("stats", {})
                 models_used = result_dict.get("models_used", {})
 
+                # 提取成功标记（B1方案：失败时不写文件）
+                calibrate_success = result_dict.get("calibrate_success", True)
+                summary_success = result_dict.get("summary_success", True)
+
                 # 保存 LLM 模型配置到数据库
                 if models_used:
                     cache_manager.update_task_llm_config(task_id, models_used)
@@ -1049,32 +1256,51 @@ def _handle_llm_task(llm_task: dict):
                         f"LLM模型配置已保存: {task_id}, risk_detected={models_used.get('has_risk', False)}"
                     )
 
-                # 保存校对文本到缓存
+                # 保存校对文本到缓存（仅在成功时保存）
                 if platform and media_id:
-                    cache_manager.save_llm_result(
-                        platform=platform,
-                        media_id=media_id,
-                        use_speaker_recognition=use_speaker_recognition,
-                        llm_type="calibrated",
-                        content=calibrated_text,
-                    )
-
-                    # 保存总结文本到缓存
-                    if skip_summary:
-                        summary_content = calibrated_text
-                        logger.info(f"文本过短，保存校对文本作为总结: {task_id}")
+                    if calibrate_success:
+                        cache_manager.save_llm_result(
+                            platform=platform,
+                            media_id=media_id,
+                            use_speaker_recognition=use_speaker_recognition,
+                            llm_type="calibrated",
+                            content=calibrated_text,
+                        )
+                        logger.info(f"校对文本已保存到缓存: {task_id}")
                     else:
-                        summary_content = summary_text
-                        logger.info(f"保存LLM总结到缓存: {task_id}")
+                        logger.warning(f"校对失败，跳过保存校对文件: {task_id}")
 
-                    cache_manager.save_llm_result(
-                        platform=platform,
-                        media_id=media_id,
-                        use_speaker_recognition=use_speaker_recognition,
-                        llm_type="summary",
-                        content=summary_content,
-                    )
-                    logger.info(f"LLM结果已保存到缓存: {platform}/{media_id}")
+                    # 保存总结文本到缓存（仅在成功时保存）
+                    if summary_success:
+                        if skip_summary:
+                            # 跳过总结时，只有校对成功才保存
+                            if calibrate_success:
+                                summary_content = calibrated_text
+                                logger.info(f"文本过短，保存校对文本作为总结: {task_id}")
+                                cache_manager.save_llm_result(
+                                    platform=platform,
+                                    media_id=media_id,
+                                    use_speaker_recognition=use_speaker_recognition,
+                                    llm_type="summary",
+                                    content=summary_content,
+                                )
+                        else:
+                            summary_content = summary_text
+                            logger.info(f"保存LLM总结到缓存: {task_id}")
+                            cache_manager.save_llm_result(
+                                platform=platform,
+                                media_id=media_id,
+                                use_speaker_recognition=use_speaker_recognition,
+                                llm_type="summary",
+                                content=summary_content,
+                            )
+                    else:
+                        logger.warning(f"总结失败，跳过保存总结文件: {task_id}")
+
+                    if calibrate_success or summary_success:
+                        logger.info(f"LLM结果已保存到缓存: {platform}/{media_id}")
+                    else:
+                        logger.warning(f"LLM处理全部失败，未保存任何结果文件: {task_id}")
 
                 # 获取查看链接
                 task_info = cache_manager.get_task_by_id(task_id)
@@ -1123,7 +1349,7 @@ def _handle_llm_task(llm_task: dict):
 
                 send_long_text_wechat(
                     title=video_title,
-                    url=url,
+                    url=display_url,
                     text=full_message,
                     is_summary=not skip_summary,
                     has_speaker_recognition=use_speaker_recognition,
@@ -1140,7 +1366,7 @@ def _handle_llm_task(llm_task: dict):
                     base_url = get_base_url()
                     view_url = f"{base_url}/view/{task_info['view_token']}"
 
-                    clean_url = WechatNotifier()._clean_url(url)
+                    clean_url = WechatNotifier()._clean_url(display_url)
 
                     sanitized_title = video_title
                     try:

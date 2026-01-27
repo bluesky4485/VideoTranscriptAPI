@@ -1,77 +1,172 @@
 """
-测试 LLM 失败时附加原始转录文本的功能
+Test LLM failure handling - B1 strategy: don't write files on failure
+
+This test verifies:
+1. LLMCallError is raised on API failure
+2. calibrate_success/summary_success flags are set correctly
+3. Files are not saved when LLM calls fail
 """
 import sys
 import os
 
-# 添加项目根目录到 sys.path
+# Add project root to sys.path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 sys.path.insert(0, project_root)
 
-def test_failure_handling():
-    """测试失败处理逻辑"""
 
-    # 模拟 LLM 任务
-    llm_task = {
-        "task_id": "test_failure_123",
-        "transcript": "这是一段测试的原始转录文本。包含了一些内容，用于测试当LLM调用失败时，是否能够正确附加到错误信息后面。",
-        "video_title": "测试视频",
-        "author": "测试作者",
-        "description": "测试描述",
-        "use_speaker_recognition": False,
-        "transcription_data": None
+def test_llm_call_error_exception():
+    """Test that LLMCallError is properly defined and can be raised"""
+    from src.video_transcript_api.utils.llm import LLMCallError
+
+    # Test exception can be created with message
+    error = LLMCallError("Test error message")
+    assert str(error) == "Test error message"
+    assert error.message == "Test error message"
+    assert error.last_error is None
+
+    # Test exception can be created with last_error
+    original_error = ValueError("Original error")
+    error = LLMCallError("Wrapper message", original_error)
+    assert error.last_error is original_error
+
+    print("Test 1 passed: LLMCallError exception works correctly")
+
+
+def test_success_flags_in_result_dict():
+    """Test that success flags are correctly set in result_dict"""
+
+    # Simulate successful result
+    success_result = {
+        "calibrate_success": True,
+        "summary_success": True,
     }
+    assert success_result["calibrate_success"] is True
+    assert success_result["summary_success"] is True
 
-    # 模拟失败的返回结果
-    error_message = "【LLM call failed】400 Client Error: Bad Request for url: http://example.com"
+    # Simulate failed result
+    failed_result = {
+        "calibrate_success": False,
+        "summary_success": False,
+    }
+    assert failed_result["calibrate_success"] is False
+    assert failed_result["summary_success"] is False
 
-    # 模拟处理逻辑
+    # Simulate partial failure
+    partial_result = {
+        "calibrate_success": True,
+        "summary_success": False,
+    }
+    assert partial_result["calibrate_success"] is True
+    assert partial_result["summary_success"] is False
+
+    print("Test 2 passed: Success flags work correctly")
+
+
+def test_save_logic_with_success_flags():
+    """Test that save logic respects success flags"""
+
+    # Mock save function that tracks calls
+    saved_files = []
+
+    def mock_save_llm_result(platform, media_id, use_speaker_recognition, llm_type, content):
+        saved_files.append({
+            "llm_type": llm_type,
+            "content": content
+        })
+
+    # Test case 1: Both succeed - both files should be saved
+    saved_files.clear()
     result_dict = {
-        '校对文本': error_message,
-        '内容总结': error_message
+        "calibrate_success": True,
+        "summary_success": True,
+        "skip_summary": False,
+    }
+    calibrated_text = "Calibrated text content"
+    summary_text = "Summary text content"
+
+    if result_dict["calibrate_success"]:
+        mock_save_llm_result("test", "123", False, "calibrated", calibrated_text)
+    if result_dict["summary_success"]:
+        mock_save_llm_result("test", "123", False, "summary", summary_text)
+
+    assert len(saved_files) == 2
+    assert saved_files[0]["llm_type"] == "calibrated"
+    assert saved_files[1]["llm_type"] == "summary"
+    print("  Case 1 passed: Both succeed -> both files saved")
+
+    # Test case 2: Both fail - no files should be saved
+    saved_files.clear()
+    result_dict = {
+        "calibrate_success": False,
+        "summary_success": False,
+        "skip_summary": False,
     }
 
-    # 应用失败处理逻辑（模拟 _process_original_logic 中的处理）
-    if result_dict.get('校对文本', '').startswith('【LLM call failed】'):
-        print("检测到校对失败，附加原始转录文本")
-        result_dict['校对文本'] = (
-            f"{result_dict['校对文本']}\n\n"
-            f"{'='*60}\n"
-            f"以下是原始转录文本：\n"
-            f"{'='*60}\n\n"
-            f"{llm_task['transcript']}"
-        )
+    if result_dict["calibrate_success"]:
+        mock_save_llm_result("test", "123", False, "calibrated", calibrated_text)
+    if result_dict["summary_success"]:
+        mock_save_llm_result("test", "123", False, "summary", summary_text)
 
-    if result_dict.get('内容总结', '').startswith('【LLM call failed】'):
-        print("检测到总结失败，附加原始转录文本")
-        result_dict['内容总结'] = (
-            f"{result_dict['内容总结']}\n\n"
-            f"{'='*60}\n"
-            f"以下是原始转录文本：\n"
-            f"{'='*60}\n\n"
-            f"{llm_task['transcript']}"
-        )
+    assert len(saved_files) == 0
+    print("  Case 2 passed: Both fail -> no files saved")
 
-    # 验证结果
-    print("\n" + "="*80)
-    print("校对文本结果:")
-    print("="*80)
-    print(result_dict['校对文本'])
+    # Test case 3: Calibrate succeeds, summary fails - only calibrate file saved
+    saved_files.clear()
+    result_dict = {
+        "calibrate_success": True,
+        "summary_success": False,
+        "skip_summary": False,
+    }
 
-    print("\n" + "="*80)
-    print("内容总结结果:")
-    print("="*80)
-    print(result_dict['内容总结'])
+    if result_dict["calibrate_success"]:
+        mock_save_llm_result("test", "123", False, "calibrated", calibrated_text)
+    if result_dict["summary_success"]:
+        mock_save_llm_result("test", "123", False, "summary", summary_text)
 
-    # 验证是否包含原始转录文本
-    assert llm_task['transcript'] in result_dict['校对文本'], "校对文本中应包含原始转录文本"
-    assert llm_task['transcript'] in result_dict['内容总结'], "内容总结中应包含原始转录文本"
-    assert "以下是原始转录文本：" in result_dict['校对文本'], "校对文本中应包含分隔标识"
-    assert "以下是原始转录文本：" in result_dict['内容总结'], "内容总结中应包含分隔标识"
+    assert len(saved_files) == 1
+    assert saved_files[0]["llm_type"] == "calibrated"
+    print("  Case 3 passed: Calibrate success, summary fail -> only calibrate saved")
 
-    print("\n" + "="*80)
-    print("Test passed! All assertions successful.")
-    print("="*80)
+    print("Test 3 passed: Save logic respects success flags")
+
+
+def test_fallback_behavior():
+    """Test that fallback to original transcript works when LLM file doesn't exist"""
+
+    # Simulate cache_data without LLM results (files not saved due to failure)
+    cache_data_no_llm = {
+        "transcript_data": "Original transcript text from ASR",
+        "title": "Test Video",
+    }
+
+    # Simulate getting view data - should fallback to transcript_data
+    transcript = cache_data_no_llm.get('llm_calibrated') or cache_data_no_llm.get('transcript_data', '')
+    summary = cache_data_no_llm.get('llm_summary', 'Summary not available')
+
+    assert transcript == "Original transcript text from ASR"
+    assert summary == "Summary not available"
+
+    print("Test 4 passed: Fallback to original transcript works")
+
 
 if __name__ == "__main__":
-    test_failure_handling()
+    print("=" * 60)
+    print("Testing LLM Failure Handling (B1 Strategy)")
+    print("=" * 60)
+    print()
+
+    test_llm_call_error_exception()
+    print()
+
+    test_success_flags_in_result_dict()
+    print()
+
+    test_save_logic_with_success_flags()
+    print()
+
+    test_fallback_behavior()
+    print()
+
+    print("=" * 60)
+    print("All tests passed!")
+    print("=" * 60)

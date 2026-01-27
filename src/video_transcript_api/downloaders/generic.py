@@ -23,6 +23,12 @@ class GenericDownloader(BaseDownloader):
         self.supported_audio_extensions = {'.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac', '.wma'}
         self.supported_video_extensions = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v'}
         self.supported_extensions = self.supported_audio_extensions | self.supported_video_extensions
+
+        # 初始化临时文件目录
+        temp_dir_config = self.config.get("storage", {}).get("temp_dir", "./data/temp")
+        self.temp_dir = os.path.abspath(temp_dir_config)
+        # 确保临时目录存在
+        os.makedirs(self.temp_dir, exist_ok=True)
         
     def can_handle(self, url):
         """
@@ -204,13 +210,32 @@ class GenericDownloader(BaseDownloader):
                         logger.info(f"检测到部分下载文件，从 {initial_pos} 字节处续传")
                 
                 # 发起请求
-                response = requests.get(
-                    url, 
-                    headers=resume_header, 
-                    stream=True, 
-                    timeout=(30, 300)  # 连接超时30秒，读取超时300秒
-                )
-                response.raise_for_status()
+                try:
+                    response = requests.get(
+                        url,
+                        headers=resume_header,
+                        stream=True,
+                        timeout=(30, 300)  # 连接超时30秒，读取超时300秒
+                    )
+                    response.raise_for_status()
+                except requests.exceptions.HTTPError as e:
+                    # 处理 416 Range Not Satisfiable 错误（服务器不支持断点续传）
+                    if e.response.status_code == 416:
+                        logger.warning(f"服务器不支持断点续传 (416)，删除部分文件重新下载: {local_path}")
+                        if os.path.exists(local_path):
+                            os.remove(local_path)
+                            logger.info("已删除部分下载文件，准备重新下载")
+                        # 重新发起请求（不带 Range header）
+                        response = requests.get(
+                            url,
+                            stream=True,
+                            timeout=(30, 300)
+                        )
+                        response.raise_for_status()
+                        initial_pos = 0  # 重置初始位置
+                        resume_header = {}  # 清空 resume header
+                    else:
+                        raise
                 
                 # 获取文件总大小
                 content_length = response.headers.get('content-length')

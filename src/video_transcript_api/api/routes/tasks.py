@@ -38,10 +38,11 @@ async def transcribe_video(
         raise HTTPException(status_code=400, detail="视频URL不能为空")
 
     logger.info(
-        "收到转录API请求 - URL: %s, 说话人识别: %s, 自定义企微webhook: %s, 完整请求体: %s",
+        "收到转录API请求 - URL: %s, 说话人识别: %s, 自定义企微webhook: %s, source_url: %s, 完整请求体: %s",
         url,
         request_body.use_speaker_recognition,
         request_body.wechat_webhook is not None,
+        request_body.source_url,
         request_body.model_dump(),
     )
 
@@ -59,7 +60,11 @@ async def transcribe_video(
     )
 
     try:
-        task_info = cache_manager.create_task(url, request_body.use_speaker_recognition)
+        task_info = cache_manager.create_task(
+            url=url,
+            use_speaker_recognition=request_body.use_speaker_recognition,
+            source_url=request_body.source_url
+        )
         task_id = task_info["task_id"]
         view_token = task_info["view_token"]
 
@@ -83,6 +88,8 @@ async def transcribe_video(
                 "use_speaker_recognition": request_body.use_speaker_recognition,
                 "wechat_webhook": effective_webhook,
                 "user_info": user_info,
+                "source_url": request_body.source_url,
+                "metadata_override": request_body.metadata_override.model_dump() if request_body.metadata_override else None,
             }
 
             try:
@@ -93,25 +100,34 @@ async def transcribe_video(
                 raise HTTPException(status_code=503, detail="任务队列已满，请稍后重试")
 
             try:
-                title = "转录任务已创建"
-                if "youtube.com" in url or "youtu.be" in url:
-                    title = "YouTube视频转录"
-                elif "bilibili.com" in url:
-                    title = "Bilibili视频转录"
-                elif "xiaoyuzhoufm.com" in url:
-                    title = "小宇宙播客转录"
-                elif "xiaohongshu.com" in url:
-                    title = "小红书内容转录"
-                elif "douyin.com" in url:
-                    title = "抖音视频转录"
+                # 优先使用 source_url 用于平台识别和通知显示
+                display_url = request_body.source_url or url
+
+                # 如果用户提供了 metadata_override.title，优先使用它
+                if request_body.metadata_override and request_body.metadata_override.title:
+                    title = request_body.metadata_override.title
+                    logger.info("使用用户提供的标题: %s", title)
+                else:
+                    # 根据平台生成默认标题
+                    title = "转录任务已创建"
+                    if "youtube.com" in display_url or "youtu.be" in display_url:
+                        title = "YouTube视频转录"
+                    elif "bilibili.com" in display_url or "b23.tv" in display_url:
+                        title = "Bilibili视频转录"
+                    elif "xiaoyuzhoufm.com" in display_url:
+                        title = "小宇宙播客转录"
+                    elif "xiaohongshu.com" in display_url or "xhslink.com" in display_url:
+                        title = "小红书内容转录"
+                    elif "douyin.com" in display_url:
+                        title = "抖音视频转录"
 
                 send_view_link_wechat(
                     title=f"🎬 {title}",
                     view_token=view_token,
                     webhook=effective_webhook,
-                    original_url=url,
+                    original_url=display_url,
                 )
-                logger.info("已发送任务创建通知: %s", task_id)
+                logger.info("已发送任务创建通知: %s，使用URL: %s", task_id, display_url)
             except Exception as exc:
                 logger.exception("发送任务创建通知失败: %s, 错误: %s", task_id, exc)
         except Exception as queue_exc:
