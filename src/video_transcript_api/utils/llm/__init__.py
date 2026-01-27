@@ -66,16 +66,12 @@ from .prompts import (
     STRUCTURED_CALIBRATE_SYSTEM_PROMPT,
     VALIDATION_SYSTEM_PROMPT,
     SPEAKER_INFERENCE_SYSTEM_PROMPT,
-    SEGMENT_SUMMARY_SYSTEM_PROMPT,
-    FINAL_SUMMARY_SYSTEM_PROMPT,
     # User prompt builders
     build_calibrate_user_prompt,
     build_summary_user_prompt,
     build_structured_calibrate_user_prompt,
     build_validation_user_prompt,
     build_speaker_inference_user_prompt,
-    build_segment_summary_user_prompt,
-    build_final_summary_user_prompt,
 )
 
 # 新架构模块
@@ -147,13 +143,9 @@ __all__ = [
     "STRUCTURED_CALIBRATE_SYSTEM_PROMPT",
     "VALIDATION_SYSTEM_PROMPT",
     "SPEAKER_INFERENCE_SYSTEM_PROMPT",
-    "SEGMENT_SUMMARY_SYSTEM_PROMPT",
-    "FINAL_SUMMARY_SYSTEM_PROMPT",
     "build_calibrate_user_prompt",
     "build_summary_user_prompt",
     "build_structured_calibrate_user_prompt",
     "build_validation_user_prompt",
     "build_speaker_inference_user_prompt",
-    "build_segment_summary_user_prompt",
-    "build_final_summary_user_prompt",
 ]

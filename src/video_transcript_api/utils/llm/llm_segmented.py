@@ -18,12 +18,8 @@ from .prompts import (
     CALIBRATE_SYSTEM_PROMPT_WITH_SPEAKER,
     SUMMARY_SYSTEM_PROMPT_SINGLE_SPEAKER,
     SUMMARY_SYSTEM_PROMPT_MULTI_SPEAKER,
-    SEGMENT_SUMMARY_SYSTEM_PROMPT,
-    FINAL_SUMMARY_SYSTEM_PROMPT,
     build_calibrate_user_prompt,
     build_summary_user_prompt,
-    build_segment_summary_user_prompt,
-    build_final_summary_user_prompt,
 )
 
 logger = setup_logger(__name__)
@@ -420,7 +416,9 @@ class SegmentedLLMProcessor:
     
     def summarize_text_segmented(self, text_for_summary: str, title: str = "", description: str = "", selected_summary_model: str = None, selected_reasoning_effort: str = None) -> str:
         """
-        对文本进行单次总结（不分段，文本可以是原始或校对结果）
+        对文本进行单次总结（整体处理，不分段）
+
+        注意：方法名保留 "segmented" 是为了向后兼容，实际上不再进行分段处理。
 
         Args:
             text_for_summary: 用于总结的文本
@@ -442,7 +440,7 @@ class SegmentedLLMProcessor:
         if selected_reasoning_effort is None:
             selected_reasoning_effort = self.summary_reasoning_effort
 
-        # 不再分段，直接对全文进行总结，让LLM有全局理解
+        # 直接对全文进行总结，让LLM有全局理解
         return self._summarize_single_text(text_for_summary, title, description, selected_summary_model, selected_reasoning_effort)
     
     def _summarize_single_text(self, text: str, title: str, description: str, selected_summary_model: str, selected_reasoning_effort: str) -> str:
@@ -495,70 +493,3 @@ class SegmentedLLMProcessor:
 
         logger.info("文本总结完成")
         return summary
-    
-    def _summarize_segmented_text(self, text: str, title: str, description: str) -> str:
-        """
-        对超长文本进行分段总结
-
-        Args:
-            text: 文本内容
-            title: 视频标题
-            description: 视频描述
-
-        Returns:
-            总结文本
-        """
-        # 分段处理
-        segments = self.segmentation_processor.segment_txt_content(text)
-        segment_summaries = []
-
-        total_segments = len(segments)
-        logger.info(f"开始分段总结，共 {total_segments} 个段落")
-
-        for i, segment in enumerate(segments):
-            logger.info(f"正在总结第 {i+1}/{total_segments} 段")
-
-            # KV Cache 优化：使用静态 system prompt + 动态 user prompt
-            user_prompt = build_segment_summary_user_prompt(segment, i+1, total_segments)
-
-            segment_summary = call_llm_api(
-                model=self.summary_model,
-                prompt=user_prompt,
-                api_key=self.api_key,
-                base_url=self.base_url,
-                max_retries=self.max_retries,
-                retry_delay=self.retry_delay,
-                reasoning_effort=self.summary_reasoning_effort,
-                task_type="segment_summary",
-                system_prompt=SEGMENT_SUMMARY_SYSTEM_PROMPT,  # KV Cache 优化
-            )
-
-            segment_summaries.append(segment_summary)
-            logger.info(f"第 {i+1} 段总结完成")
-
-        # 将各段总结合并为最终总结
-        combined_summaries = "\n\n".join(segment_summaries)
-
-        # KV Cache 优化：使用静态 system prompt + 动态 user prompt
-        final_user_prompt = build_final_summary_user_prompt(combined_summaries, title, description)
-
-        logger.info("开始生成最终总结")
-        final_summary = call_llm_api(
-            model=self.summary_model,
-            prompt=final_user_prompt,
-            api_key=self.api_key,
-            base_url=self.base_url,
-            max_retries=self.max_retries,
-            retry_delay=self.retry_delay,
-            reasoning_effort=self.summary_reasoning_effort,
-            task_type="final_summary",
-            system_prompt=FINAL_SUMMARY_SYSTEM_PROMPT,  # KV Cache 优化
-        )
-
-        logger.info("分段总结完成")
-        return final_summary
-
-    # 注：以下方法已移至 prompts.py 模块：
-    # - _generate_summary_prompt -> SUMMARY_SYSTEM_PROMPT_* + build_summary_user_prompt
-    # - _generate_segment_summary_prompt -> SEGMENT_SUMMARY_SYSTEM_PROMPT + build_segment_summary_user_prompt
-    # - _generate_final_summary_prompt -> FINAL_SUMMARY_SYSTEM_PROMPT + build_final_summary_user_prompt
