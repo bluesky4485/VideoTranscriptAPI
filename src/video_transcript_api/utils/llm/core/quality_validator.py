@@ -118,6 +118,7 @@ class QualityValidator:
                 user_prompt=user_prompt,
                 response_schema=VALIDATION_RESULT_SCHEMA,
                 reasoning_effort=self.reasoning_effort,
+                task_type="quality_validation",
             )
 
             # 解析结果

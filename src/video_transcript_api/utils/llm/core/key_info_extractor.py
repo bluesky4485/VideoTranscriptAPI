@@ -135,6 +135,7 @@ class KeyInfoExtractor:
                 user_prompt=user_prompt,
                 response_schema=KEY_INFO_SCHEMA,
                 reasoning_effort=self.reasoning_effort,
+                task_type="key_info",
             )
 
             # 解析结果

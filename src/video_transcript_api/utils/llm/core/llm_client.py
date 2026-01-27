@@ -48,6 +48,7 @@ class LLMClient:
         user_prompt: str,
         response_schema: Optional[Dict] = None,
         reasoning_effort: Optional[str] = None,
+        task_type: str = "unknown",
     ) -> LLMResponse:
         """调用 LLM API（带智能重试）
 
@@ -57,6 +58,7 @@ class LLMClient:
             user_prompt: 用户提示词
             response_schema: 响应 Schema（可选，用于结构化输出）
             reasoning_effort: reasoning effort 参数（可选）
+            task_type: 任务类型，用于日志追踪（默认 "unknown"）
 
         Returns:
             LLMResponse 对象
@@ -79,6 +81,7 @@ class LLMClient:
                     user_prompt=user_prompt,
                     response_schema=response_schema,
                     reasoning_effort=reasoning_effort,
+                    task_type=task_type,
                 )
 
                 if attempt > 0:
@@ -141,6 +144,7 @@ class LLMClient:
         user_prompt: str,
         response_schema: Optional[Dict],
         reasoning_effort: Optional[str],
+        task_type: str,
     ) -> LLMResponse:
         """实际的 API 调用（不包含重试逻辑）"""
         try:
@@ -154,6 +158,7 @@ class LLMClient:
                 max_retries=0,  # 底层不重试，由 LLMClient 统一处理
                 retry_delay=0,
                 reasoning_effort=reasoning_effort,
+                task_type=task_type,
             )
 
             # 判断返回类型

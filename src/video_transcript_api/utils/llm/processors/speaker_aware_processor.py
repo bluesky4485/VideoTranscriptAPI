@@ -214,6 +214,7 @@ class SpeakerAwareProcessor:
                     user_prompt=user_prompt,
                     response_schema=CALIBRATION_RESULT_SCHEMA,
                     reasoning_effort=reasoning_effort,
+                    task_type="calibrate_chunk",
                 )
 
                 # 解析结构化输出

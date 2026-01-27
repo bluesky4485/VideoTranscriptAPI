@@ -106,6 +106,7 @@ class SpeakerInferencer:
                 user_prompt=user_prompt,
                 response_schema=SPEAKER_MAPPING_SCHEMA,
                 reasoning_effort=self.reasoning_effort,
+                task_type="speaker_inference",
             )
 
             # 解析结果

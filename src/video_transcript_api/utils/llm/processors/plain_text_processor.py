@@ -169,6 +169,7 @@ class PlainTextProcessor:
                     system_prompt=CALIBRATE_SYSTEM_PROMPT,
                     user_prompt=user_prompt,
                     reasoning_effort=reasoning_effort,
+                    task_type="calibrate_segment",
                 )
 
                 calibrated_segments[index] = response.text
