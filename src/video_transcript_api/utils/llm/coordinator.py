@@ -204,7 +204,7 @@ class LLMCoordinator:
             )
         elif isinstance(content, list):
             # 对话列表 - 使用 SpeakerAwareProcessor
-            logger.info("Routing to SpeakerAwareProcessor")
+            logger.info(f"Routing to SpeakerAwareProcessor (dialog count: {len(content)})")
             return self.speaker_aware_processor.process(
                 dialogs=content,
                 title=title,
@@ -214,8 +214,33 @@ class LLMCoordinator:
                 media_id=media_id,
                 selected_models=selected_models,
             )
+        elif isinstance(content, dict):
+            # 如果传入字典，尝试提取 segments 字段
+            if "segments" in content:
+                logger.warning(
+                    "Received dict with 'segments' key. Extracting segments list. "
+                    "Please pass segments directly instead of the full dict."
+                )
+                segments = content.get("segments", [])
+                return self.speaker_aware_processor.process(
+                    dialogs=segments,
+                    title=title,
+                    author=author,
+                    description=description,
+                    platform=platform,
+                    media_id=media_id,
+                    selected_models=selected_models,
+                )
+            else:
+                raise ValueError(
+                    f"Unsupported content type: dict without 'segments' key. "
+                    f"Available keys: {list(content.keys())}"
+                )
         else:
-            raise ValueError(f"Unsupported content type: {type(content)}")
+            raise ValueError(
+                f"Unsupported content type: {type(content)}. "
+                f"Expected str (plain text) or list (dialogs)."
+            )
 
     def _extract_speaker_count(
         self,

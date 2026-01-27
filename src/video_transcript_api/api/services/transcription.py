@@ -1305,11 +1305,25 @@ def _handle_llm_task(llm_task: dict):
                 logger.info(f"开始使用 LLM 协调器处理任务: {task_id}")
 
                 # 准备新架构的参数
-                content = (
-                    llm_task.get("transcription_data")
-                    if use_speaker_recognition and llm_task.get("transcription_data")
-                    else transcript
-                )
+                if use_speaker_recognition and llm_task.get("transcription_data"):
+                    # 有说话人识别：提取 segments 字段（对话列表）
+                    transcription_data = llm_task.get("transcription_data")
+                    if isinstance(transcription_data, dict):
+                        # 如果是字典，提取 segments
+                        content = transcription_data.get("segments", [])
+                    elif isinstance(transcription_data, list):
+                        # 如果已经是列表，直接使用
+                        content = transcription_data
+                    else:
+                        # 降级到格式化文本
+                        logger.warning(
+                            f"Unexpected transcription_data type: {type(transcription_data)}, "
+                            f"falling back to formatted text"
+                        )
+                        content = transcript
+                else:
+                    # 无说话人识别：使用纯文本
+                    content = transcript
 
                 # 调用新架构
                 coordinator_result = llm_coordinator.process(
