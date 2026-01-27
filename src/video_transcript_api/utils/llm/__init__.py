@@ -47,10 +47,6 @@ from .llm import (
     reset_llm_stats,
     log_llm_stats,
 )
-from .llm_enhanced import EnhancedLLMProcessor
-from .llm_segmented import SegmentedLLMProcessor
-from .structured_calibrator import StructuredCalibrator
-from .text_segmentation import TextSegmentationProcessor
 from .speaker_mapping import SpeakerMappingInference, infer_speaker_mapping_from_cache
 from .schemas import (
     CALIBRATION_RESULT_SCHEMA,
@@ -106,11 +102,7 @@ __all__ = [
     "get_llm_stats",
     "reset_llm_stats",
     "log_llm_stats",
-    # Processors (Legacy)
-    "EnhancedLLMProcessor",
-    "SegmentedLLMProcessor",
-    "StructuredCalibrator",
-    "TextSegmentationProcessor",
+    # Legacy helpers
     "SpeakerMappingInference",
     "infer_speaker_mapping_from_cache",
     # New Architecture

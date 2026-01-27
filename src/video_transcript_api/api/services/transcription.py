@@ -12,7 +12,6 @@ from ..context import (
     get_audit_logger,
     get_cache_manager,
     get_config,
-    get_enhanced_llm_processor,
     get_executor,
     get_llm_coordinator,
     get_llm_executor,
@@ -39,9 +38,8 @@ config = get_config()
 user_manager = get_user_manager()
 audit_logger = get_audit_logger()
 cache_manager = get_cache_manager()
-# 使用新架构（如需回滚，注释下行，取消注释下下行）
+# 使用新架构
 llm_coordinator = get_llm_coordinator()
-# enhanced_llm_processor = get_enhanced_llm_processor()  # 旧架构回滚用
 task_results = get_task_results()
 task_queue = get_task_queue()
 llm_task_queue = get_llm_queue()

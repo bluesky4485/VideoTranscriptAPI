@@ -11,7 +11,7 @@ from fastapi.templating import Jinja2Templates
 
 from ..utils.accounts import get_user_manager as _get_user_manager_impl
 from ..utils.cache import CacheManager
-from ..utils.llm import EnhancedLLMProcessor, LLMCoordinator
+from ..utils.llm import LLMCoordinator
 from ..utils.logging import get_audit_logger as _get_audit_logger_impl
 from ..utils.logging import load_config as _load_config_impl
 from ..utils.logging import setup_logger
@@ -80,12 +80,6 @@ def get_llm_coordinator():
     config = get_config()
     cache_dir = config.get("storage", {}).get("cache_dir", "./data/cache")
     return LLMCoordinator(config_dict=config, cache_dir=cache_dir)
-
-
-@lru_cache
-def get_enhanced_llm_processor():
-    """获取增强 LLM 处理器（旧架构，保留用于回滚）"""
-    return EnhancedLLMProcessor(get_config())
 
 
 def get_task_results() -> Dict[str, Dict[str, Any]]:
