@@ -158,9 +158,12 @@ class LLMClient:
 
             # 判断返回类型
             if isinstance(result, StructuredResult):
+                # StructuredResult 只有 success, data, error 三个属性
+                if not result.success:
+                    raise LLMCallError(f"Structured output failed: {result.error}")
                 return LLMResponse(
-                    text=result.text,
-                    structured_output=result.structured_output,
+                    text="",  # 结构化输出没有纯文本内容
+                    structured_output=result.data or {},
                 )
             else:
                 return LLMResponse(text=result)
