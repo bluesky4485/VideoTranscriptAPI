@@ -59,7 +59,8 @@ class DialogSegmenter:
 
             # 加入会超长 → 结束当前 chunk
             if current_length + dialog_length > self.max_chunk_length:
-                chunks.append(current_chunk)
+                if current_chunk:
+                    chunks.append(current_chunk)
                 current_chunk = [dialog]
                 current_length = dialog_length
             else:
@@ -75,10 +76,13 @@ class DialogSegmenter:
         # 处理剩余对话
         if current_chunk:
             # 如果最后一个 chunk 太短，合并到前一个
-            if chunks and len("".join(d.get("text", "") for d in current_chunk)) < self.min_chunk_length:
+            if chunks and current_length < self.min_chunk_length:
                 chunks[-1].extend(current_chunk)
             else:
                 chunks.append(current_chunk)
+
+        # 过滤空 chunk
+        chunks = [chunk for chunk in chunks if chunk]
 
         logger.debug(
             f"Dialog chunking completed: {len(chunks)} chunks, "

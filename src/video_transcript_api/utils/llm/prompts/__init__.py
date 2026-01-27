@@ -379,6 +379,9 @@ def build_structured_calibrate_user_prompt(
         # 数量要求（关键约束）
         parts.append(f"\n**对话数量约束**：输入有 {dialog_count} 个对话，输出必须恰好 {dialog_count} 个对话。")
 
+        # 格式说明（帮助保持时间/说话人一致）
+        parts.append("\n**对话格式说明**：每行格式为 [HH:MM:SS][说话人]: 内容，时间与说话人必须保持不变。")
+
         # 辅助信息
         if video_title or author or description:
             parts.append("\n**辅助信息**（用于参考专有名词和拼写）：")
