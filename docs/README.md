@@ -79,17 +79,17 @@ docs/
   - Reasoning Effort 配置
   - 错误处理与可观测性
 
-- [LLM 重构方案](docs/development/llm/refactoring_plan.md)
+- [LLM 重构方案](docs/development/archive/refactoring_plan.md)
   - 模块化架构设计方案
   - 统一校对思路
   - 核心组件设计
 
-- [LLM 重构完成报告](docs/development/llm/refactoring_completed.md)
+- [LLM 重构完成报告](docs/development/archive/refactoring_completed.md)
   - 重构实施总结
   - 测试结果
   - 使用示例
 
-- [LLM 总结功能设计](docs/development/llm/summary_feature_design.md)
+- [LLM 总结功能设计](docs/development/archive/summary_feature_design.md)
   - 总结功能恢复设计
   - 架构对比
   - 实施步骤
@@ -134,6 +134,13 @@ docs/
 - [文档归档目录](development/archive/)
   - 已完成的文档（LLM 重构、架构优化、模块迁移）
   - 归档说明和维护原则
+
+  **重要归档文档**：
+  - [LLM 重构方案](development/archive/refactoring_plan.md)
+  - [LLM 重构完成报告](development/archive/refactoring_completed.md)
+  - [LLM 总结功能设计](development/archive/summary_feature_design.md)
+  - [架构优化方案](development/archive/architecture_optimization_plan.md)
+  - [模块迁移方案](development/archive/module_migration_plan.md)
   - Loguru 使用指南
   - 日志配置
   - FunASR 日志说明
