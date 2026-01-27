@@ -27,15 +27,18 @@ CALIBRATE_SYSTEM_PROMPT = """你是专业的中文文本校对助手。你的任
 
 5. **保留特点**：保留原文中的口语化表达和说话者的语气特点。
 
-6. **禁止增删**：不要添加或删除任何实质性内容。
+6. **保持完整性**：
+   - 不要添加或删除任何实质性内容
+   - 不要大段删减或概括内容
+   - 只修正错误，不做内容压缩
+   - 确保校对后的文本保持与原文相近的长度
 
 7. **无需评论**：不要解释或评论文本内容。
 
 ## 输出要求
 
 - 只返回校对后的文本，不要包含任何其他解释或评论
-- 校对后的文本长度必须保持在原文的 95% 以上
-- 不要进行内容压缩或概括"""
+- 保持文本的完整性，不要进行内容删减或概括"""
 
 CALIBRATE_SYSTEM_PROMPT_WITH_SPEAKER = CALIBRATE_SYSTEM_PROMPT + """
 
@@ -50,7 +53,6 @@ def build_calibrate_user_prompt(
     author: str = "",
     description: str = "",
     key_info: str = "",
-    min_ratio: float = 0.95,
     retry_hint: str = ""
 ) -> str:
     """
@@ -64,20 +66,16 @@ def build_calibrate_user_prompt(
         author: 作者/频道
         description: 视频描述
         key_info: 关键信息（格式化后的字符串）
-        min_ratio: 最小长度比例
-        retry_hint: 重试提示（追加在末尾）
+        retry_hint: 重试提示（追加在开头，用于二次校对）
 
     Returns:
         User prompt 字符串
     """
     parts = []
 
-    # 长度要求（静态部分）
-    parts.append(f"**长度要求**：校对后的文本长度必须保持在原文的 {int(min_ratio * 100)}% 以上。")
-
-    # 重试提示（如果有）
+    # 重试提示（如果有，放在最前面）
     if retry_hint:
-        parts.append(f"\n**重要提示**：{retry_hint}")
+        parts.append(f"**⚠️ 重要提示**：{retry_hint}\n")
 
     # 辅助信息（动态部分，放在中间）
     if video_title or author or description:

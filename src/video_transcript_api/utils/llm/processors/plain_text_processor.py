@@ -96,15 +96,8 @@ class PlainTextProcessor:
             selected_models=selected_models,
         )
 
-        # 合并校对结果
+        # 合并校对结果（分段级检查已完成，无需全局检查）
         calibrated_text = "\n\n".join(calibrated_segments)
-
-        # 步骤4: 质量判断（长度检查）
-        calibrated_text = self.quality_validator.validate_by_length(
-            original=text,
-            calibrated=calibrated_text,
-            min_ratio=self.config.min_calibrate_ratio,
-        )
 
         logger.info(
             f"Plain text processing completed: "
@@ -150,20 +143,19 @@ class PlainTextProcessor:
         calibrated_segments = [None] * len(segments)
 
         def calibrate_single_segment(index: int, segment: str):
-            """校对单个分段"""
+            """校对单个分段（含长度检查 + 二次校对）"""
             try:
-                logger.info(f"Calibrating segment {index + 1}/{len(segments)}, length: {len(segment)}")
+                original_length = len(segment)
+                logger.info(f"Calibrating segment {index + 1}/{len(segments)}, length: {original_length}")
 
-                # 构建 prompt
+                # 第一次校对
                 user_prompt = build_calibrate_user_prompt(
                     transcript=segment,
                     video_title=title,
                     description=description,
                     key_info=key_info_text,
-                    min_ratio=self.config.min_calibrate_ratio,
                 )
 
-                # 调用 LLM
                 response = self.llm_client.call(
                     model=model,
                     system_prompt=CALIBRATE_SYSTEM_PROMPT,
@@ -172,8 +164,65 @@ class PlainTextProcessor:
                     task_type="calibrate_segment",
                 )
 
-                calibrated_segments[index] = response.text
-                logger.info(f"Segment {index + 1} calibration completed")
+                calibrated_text = response.text
+                calibrated_length = len(calibrated_text)
+
+                # 分段级别长度检查
+                min_length = int(original_length * self.config.min_calibrate_ratio)
+
+                if calibrated_length >= min_length:
+                    # 长度合格
+                    calibrated_segments[index] = calibrated_text
+                    logger.info(
+                        f"Segment {index + 1} calibration passed: "
+                        f"{original_length} -> {calibrated_length} (>= {min_length})"
+                    )
+                else:
+                    # 长度不足，二次校对
+                    logger.warning(
+                        f"Segment {index + 1} too short: {calibrated_length} < {min_length}, "
+                        f"retrying with hint..."
+                    )
+
+                    retry_hint = (
+                        f"上一次校对结果过短（{calibrated_length} 字符），"
+                        f"而原文有 {original_length} 字符。"
+                        f"请确保保留所有实质性内容，不要大段删减。"
+                    )
+
+                    user_prompt_retry = build_calibrate_user_prompt(
+                        transcript=segment,
+                        video_title=title,
+                        description=description,
+                        key_info=key_info_text,
+                        retry_hint=retry_hint,
+                    )
+
+                    response_retry = self.llm_client.call(
+                        model=model,
+                        system_prompt=CALIBRATE_SYSTEM_PROMPT,
+                        user_prompt=user_prompt_retry,
+                        reasoning_effort=reasoning_effort,
+                        task_type="calibrate_segment_retry",
+                    )
+
+                    calibrated_text_retry = response_retry.text
+                    calibrated_length_retry = len(calibrated_text_retry)
+
+                    if calibrated_length_retry >= min_length:
+                        # 二次校对通过
+                        calibrated_segments[index] = calibrated_text_retry
+                        logger.info(
+                            f"Segment {index + 1} retry passed: "
+                            f"{original_length} -> {calibrated_length_retry} (>= {min_length})"
+                        )
+                    else:
+                        # 二次校对仍不通过，降级到原文
+                        calibrated_segments[index] = segment
+                        logger.warning(
+                            f"Segment {index + 1} retry still too short: "
+                            f"{calibrated_length_retry} < {min_length}, falling back to original"
+                        )
 
             except Exception as e:
                 logger.error(f"Segment {index + 1} calibration failed: {e}")
