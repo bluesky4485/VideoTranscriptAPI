@@ -291,6 +291,6 @@ No scores collected
 ```
 
 **解决**：
-1. 确认 `enable_validation = True`
+1. 确认 `structured_calibration.quality_validation.enabled = True`
 2. 检查是否有报错信息
 3. 查看日志文件 `data/logs/app.log`

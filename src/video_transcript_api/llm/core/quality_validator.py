@@ -112,12 +112,18 @@ class QualityValidator:
         )
 
         try:
+            model = self.model
+            reasoning_effort = self.reasoning_effort
+            if selected_models:
+                model = selected_models.get("validator_model") or model
+                reasoning_effort = selected_models.get("validator_reasoning_effort") or reasoning_effort
+
             result = self.llm_client.call(
-                model=self.model,
+                model=model,
                 system_prompt=VALIDATION_SYSTEM_PROMPT,
                 user_prompt=user_prompt,
                 response_schema=VALIDATION_RESULT_SCHEMA,
-                reasoning_effort=self.reasoning_effort,
+                reasoning_effort=reasoning_effort,
                 task_type="quality_validation",
             )
 

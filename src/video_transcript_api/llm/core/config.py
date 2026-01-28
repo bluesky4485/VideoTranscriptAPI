@@ -1,7 +1,7 @@
 """LLM 统一配置类"""
 
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Optional, Dict
 
 
 @dataclass
@@ -46,10 +46,25 @@ class LLMConfig:
     min_calibrate_ratio: float = 0.80
     min_summary_threshold: int = 500
 
+    # 统一质量验证配置
+    quality_score_weights: Dict[str, float] = field(
+        default_factory=lambda: {
+            "accuracy": 0.40,
+            "completeness": 0.30,
+            "fluency": 0.20,
+            "format": 0.10,
+        }
+    )
+
     # 分段配置
     enable_threshold: int = 5000
     segment_size: int = 2000
     max_segment_size: int = 3000
+    # 分段质量验证配置（纯文本）
+    segmentation_validation_enabled: bool = False
+    segmentation_pass_ratio: float = 0.7
+    segmentation_force_retry_ratio: float = 0.5
+    segmentation_fallback_strategy: str = "best_quality"
 
     # 并发配置
     concurrent_workers: int = 10
@@ -61,6 +76,9 @@ class LLMConfig:
     max_calibration_retries: int = 2
     calibration_concurrent_limit: int = 3
     enable_validation: bool = False  # 是否启用分段质量验证（每个chunk独立打分，不再进行整体验证）
+    # 结构化校对质量验证配置（对话流）
+    structured_validation_enabled: bool = False
+    structured_fallback_strategy: str = "best_quality"
 
     # 质量阈值
     overall_score_threshold: float = 8.0
@@ -82,10 +100,43 @@ class LLMConfig:
         llm_config = config_dict.get("llm", {})
         segmentation_config = llm_config.get("segmentation", {})
         calibration_config = llm_config.get("structured_calibration", {})
-        quality_config = calibration_config.get("quality_threshold", {})
+        quality_validation_config = llm_config.get("quality_validation", {})
+        quality_config = quality_validation_config.get(
+            "quality_threshold", calibration_config.get("quality_threshold", {})
+        )
+        score_weights = quality_validation_config.get("score_weights")
+
+        segmentation_validation = segmentation_config.get("quality_validation", {})
+        structured_validation = calibration_config.get("quality_validation", {})
 
         # 导入 normalize_reasoning_effort 函数
         from .. import normalize_reasoning_effort
+
+        # 统一质量验证权重（默认值）
+        if not score_weights:
+            score_weights = {
+                "accuracy": 0.40,
+                "completeness": 0.30,
+                "fluency": 0.20,
+                "format": 0.10,
+            }
+
+        # 纯文本质量验证配置（兼容旧版：若缺失则默认关闭）
+        segmentation_validation_enabled = segmentation_validation.get("enabled")
+        if segmentation_validation_enabled is None:
+            segmentation_validation_enabled = False
+
+        # 对话流质量验证配置（兼容旧字段）
+        structured_validation_enabled = structured_validation.get("enabled")
+        if structured_validation_enabled is None:
+            structured_validation_enabled = calibration_config.get("enable_validation", False)
+
+        structured_fallback_strategy = structured_validation.get("fallback_strategy")
+        if not structured_fallback_strategy:
+            fallback_to_original = calibration_config.get("fallback_to_original", True)
+            structured_fallback_strategy = (
+                "formatted_original" if fallback_to_original else "best_quality"
+            )
 
         return cls(
             # API 配置
@@ -145,12 +196,19 @@ class LLMConfig:
             # 质量配置
             min_calibrate_ratio=llm_config.get("min_calibrate_ratio", 0.80),
             min_summary_threshold=llm_config.get("min_summary_threshold", 500),
+            quality_score_weights=score_weights,
 
             # 分段配置
             enable_threshold=segmentation_config.get("enable_threshold", 5000),
             segment_size=segmentation_config.get("segment_size", 2000),
             max_segment_size=segmentation_config.get("max_segment_size", 3000),
             concurrent_workers=segmentation_config.get("concurrent_workers", 10),
+            segmentation_validation_enabled=segmentation_validation_enabled,
+            segmentation_pass_ratio=segmentation_validation.get("pass_ratio", 0.7),
+            segmentation_force_retry_ratio=segmentation_validation.get("force_retry_ratio", 0.5),
+            segmentation_fallback_strategy=segmentation_validation.get(
+                "fallback_strategy", "best_quality"
+            ),
 
             # 结构化校对配置
             min_chunk_length=calibration_config.get("min_chunk_length", 300),
@@ -160,8 +218,10 @@ class LLMConfig:
             calibration_concurrent_limit=calibration_config.get(
                 "calibration_concurrent_limit", 3
             ),
-            # enable_validation 现在控制分段质量验证（每个chunk独立打分）
-            enable_validation=calibration_config.get("enable_validation", False),
+            # enable_validation 保持向后兼容（指向结构化校对质量验证开关）
+            enable_validation=structured_validation_enabled,
+            structured_validation_enabled=structured_validation_enabled,
+            structured_fallback_strategy=structured_fallback_strategy,
 
             # 质量阈值
             overall_score_threshold=quality_config.get("overall_score", 8.0),

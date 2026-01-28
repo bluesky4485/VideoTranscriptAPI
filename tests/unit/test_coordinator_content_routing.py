@@ -18,6 +18,18 @@ def mock_config_dict():
             "retry_delay": 5,
             "min_calibrate_ratio": 0.8,
             "min_summary_threshold": 500,
+            "quality_validation": {
+                "score_weights": {
+                    "accuracy": 0.4,
+                    "completeness": 0.3,
+                    "fluency": 0.2,
+                    "format": 0.1,
+                },
+                "quality_threshold": {
+                    "overall_score": 8.0,
+                    "minimum_single_score": 7.0,
+                },
+            },
             "segmentation": {
                 "enable_threshold": 5000,
                 "segment_size": 2000,
@@ -30,11 +42,7 @@ def mock_config_dict():
                 "preferred_chunk_length": 800,
                 "max_calibration_retries": 2,
                 "calibration_concurrent_limit": 3,
-                "enable_validation": True,
-                "quality_threshold": {
-                    "overall_score": 8.0,
-                    "minimum_single_score": 7.0,
-                },
+                "quality_validation": {"enabled": True, "fallback_strategy": "best_quality"},
             },
             "enable_risk_model_selection": False,
         }

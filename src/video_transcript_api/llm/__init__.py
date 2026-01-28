@@ -51,6 +51,7 @@ from .schemas import (
     CALIBRATION_RESULT_SCHEMA,
     VALIDATION_RESULT_SCHEMA,
     SPEAKER_MAPPING_SCHEMA,
+    UNIFIED_VALIDATION_SCHEMA,
 )
 from .prompts import (
     # System prompts
@@ -60,12 +61,14 @@ from .prompts import (
     SUMMARY_SYSTEM_PROMPT_MULTI_SPEAKER,
     STRUCTURED_CALIBRATE_SYSTEM_PROMPT,
     VALIDATION_SYSTEM_PROMPT,
+    UNIFIED_VALIDATION_SYSTEM_PROMPT,
     SPEAKER_INFERENCE_SYSTEM_PROMPT,
     # User prompt builders
     build_calibrate_user_prompt,
     build_summary_user_prompt,
     build_structured_calibrate_user_prompt,
     build_validation_user_prompt,
+    build_unified_validation_user_prompt,
     build_speaker_inference_user_prompt,
 )
 
@@ -85,6 +88,7 @@ from .core import (
     FatalError,
     classify_error,
 )
+from .validators import UnifiedQualityValidator
 from .segmenters import TextSegmenter, DialogSegmenter
 from .processors import PlainTextProcessor, SpeakerAwareProcessor
 
@@ -111,6 +115,7 @@ __all__ = [
     "KeyInfoExtractor",
     "SpeakerInferencer",
     "QualityValidator",
+    "UnifiedQualityValidator",
     "LLMError",
     "RetryableError",
     "FatalError",
@@ -122,6 +127,7 @@ __all__ = [
     # Schemas
     "CALIBRATION_RESULT_SCHEMA",
     "VALIDATION_RESULT_SCHEMA",
+    "UNIFIED_VALIDATION_SCHEMA",
     "SPEAKER_MAPPING_SCHEMA",
     # Prompts
     "CALIBRATE_SYSTEM_PROMPT",
@@ -130,10 +136,12 @@ __all__ = [
     "SUMMARY_SYSTEM_PROMPT_MULTI_SPEAKER",
     "STRUCTURED_CALIBRATE_SYSTEM_PROMPT",
     "VALIDATION_SYSTEM_PROMPT",
+    "UNIFIED_VALIDATION_SYSTEM_PROMPT",
     "SPEAKER_INFERENCE_SYSTEM_PROMPT",
     "build_calibrate_user_prompt",
     "build_summary_user_prompt",
     "build_structured_calibrate_user_prompt",
     "build_validation_user_prompt",
+    "build_unified_validation_user_prompt",
     "build_speaker_inference_user_prompt",
 ]

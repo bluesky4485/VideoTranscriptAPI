@@ -19,26 +19,79 @@ from video_transcript_api.llm.core.config import LLMConfig
 from video_transcript_api.llm.core.llm_client import LLMClient
 from video_transcript_api.llm.core.key_info_extractor import KeyInfoExtractor
 from video_transcript_api.llm.core.speaker_inferencer import SpeakerInferencer
-from video_transcript_api.llm.core.quality_validator import QualityValidator
+from video_transcript_api.llm.validators.unified_quality_validator import UnifiedQualityValidator
 from video_transcript_api.llm.core.cache_manager import CacheManager
 from video_transcript_api.llm.processors.speaker_aware_processor import SpeakerAwareProcessor
 
 
 def load_config():
     """Load config from config.jsonc"""
-    import json
-    import re
+    try:
+        import commentjson as json
+    except ImportError:
+        import json
 
     config_path = Path(__file__).parent.parent.parent / "config" / "config.jsonc"
 
     with open(config_path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # Remove comments
-    content = re.sub(r'//.*', '', content)
-    content = re.sub(r'/\*.*?\*/', '', content, flags=re.DOTALL)
+    if hasattr(json, "loads"):
+        try:
+            return json.loads(content)
+        except Exception:
+            pass
 
-    return json.loads(content)
+    # Fallback: strip comments outside strings
+    return json.loads(_strip_json_comments(content))
+
+
+def _strip_json_comments(text: str) -> str:
+    """Remove // and /* */ comments while preserving quoted content."""
+    result = []
+    i = 0
+    in_string = False
+    escape = False
+    length = len(text)
+
+    while i < length:
+        ch = text[i]
+
+        if in_string:
+            result.append(ch)
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            i += 1
+            continue
+
+        if ch == '"':
+            in_string = True
+            result.append(ch)
+            i += 1
+            continue
+
+        if ch == "/" and i + 1 < length:
+            next_ch = text[i + 1]
+            if next_ch == "/":
+                i += 2
+                while i < length and text[i] not in "\r\n":
+                    i += 1
+                continue
+            if next_ch == "*":
+                i += 2
+                while i + 1 < length and not (text[i] == "*" and text[i + 1] == "/"):
+                    i += 1
+                i += 2
+                continue
+
+        result.append(ch)
+        i += 1
+
+    return "".join(result)
 
 
 def create_test_dialogs():
@@ -61,7 +114,8 @@ def test_chunk_validation_disabled():
     config_dict = load_config()
 
     # Override config
-    config_dict["llm"]["structured_calibration"]["enable_validation"] = False
+    config_dict["llm"]["structured_calibration"].setdefault("quality_validation", {})
+    config_dict["llm"]["structured_calibration"]["quality_validation"]["enabled"] = False
 
     config = LLMConfig.from_dict(config_dict)
 
@@ -91,12 +145,13 @@ def test_chunk_validation_disabled():
         reasoning_effort=config.speaker_reasoning_effort,
     )
 
-    quality_validator = QualityValidator(
+    quality_validator = UnifiedQualityValidator(
         llm_client=llm_client,
+        model=config.validator_model or config.calibrate_model,
+        reasoning_effort=config.validator_reasoning_effort,
+        score_weights=config.quality_score_weights,
         overall_score_threshold=config.overall_score_threshold,
         minimum_single_score=config.minimum_single_score,
-        validator_model=config.validator_model or config.calibrate_model,
-        validator_reasoning_effort=config.validator_reasoning_effort,
     )
 
     processor = SpeakerAwareProcessor(
@@ -136,7 +191,8 @@ def test_chunk_validation_enabled():
     config_dict = load_config()
 
     # Override config
-    config_dict["llm"]["structured_calibration"]["enable_validation"] = True
+    config_dict["llm"]["structured_calibration"].setdefault("quality_validation", {})
+    config_dict["llm"]["structured_calibration"]["quality_validation"]["enabled"] = True
 
     config = LLMConfig.from_dict(config_dict)
 
@@ -166,12 +222,13 @@ def test_chunk_validation_enabled():
         reasoning_effort=config.speaker_reasoning_effort,
     )
 
-    quality_validator = QualityValidator(
+    quality_validator = UnifiedQualityValidator(
         llm_client=llm_client,
+        model=config.validator_model or config.calibrate_model,
+        reasoning_effort=config.validator_reasoning_effort,
+        score_weights=config.quality_score_weights,
         overall_score_threshold=config.overall_score_threshold,
         minimum_single_score=config.minimum_single_score,
-        validator_model=config.validator_model or config.calibrate_model,
-        validator_reasoning_effort=config.validator_reasoning_effort,
     )
 
     processor = SpeakerAwareProcessor(

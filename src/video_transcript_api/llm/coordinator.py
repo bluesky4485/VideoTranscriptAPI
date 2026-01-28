@@ -8,7 +8,7 @@ from .core.llm_client import LLMClient
 from .core.cache_manager import CacheManager
 from .core.key_info_extractor import KeyInfoExtractor
 from .core.speaker_inferencer import SpeakerInferencer
-from .core.quality_validator import QualityValidator
+from .validators.unified_quality_validator import UnifiedQualityValidator
 from .processors.plain_text_processor import PlainTextProcessor
 from .processors.speaker_aware_processor import SpeakerAwareProcessor
 from .processors.summary_processor import SummaryProcessor
@@ -60,10 +60,11 @@ class LLMCoordinator:
             reasoning_effort=self.config.speaker_reasoning_effort,
         )
 
-        self.quality_validator = QualityValidator(
+        self.quality_validator = UnifiedQualityValidator(
             llm_client=self.llm_client,
             model=self.config.validator_model or self.config.calibrate_model,
             reasoning_effort=self.config.validator_reasoning_effort,
+            score_weights=self.config.quality_score_weights,
             overall_score_threshold=self.config.overall_score_threshold,
             minimum_single_score=self.config.minimum_single_score,
         )

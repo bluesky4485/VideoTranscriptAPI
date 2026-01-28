@@ -36,7 +36,7 @@ python tests/llm/run_validation_scoring_test.py --serial
 
 测试会自动从 `config/config.jsonc` 读取配置，并进行以下调整：
 
-1. **强制启用质量验证**：`enable_validation = True`
+1. **强制启用质量验证**：`structured_calibration.quality_validation.enabled = True`
 2. **串行执行**：`calibration_concurrent_limit = 1`（确保打分结果顺序正确）
 3. **使用配置中的验证模型**：默认为 `deepseek-chat`
 

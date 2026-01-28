@@ -9,7 +9,7 @@ from ...utils.logging import setup_logger
 from ..core.config import LLMConfig
 from ..core.llm_client import LLMClient
 from ..core.key_info_extractor import KeyInfoExtractor, KeyInfo
-from ..core.quality_validator import QualityValidator
+from ..validators.unified_quality_validator import UnifiedQualityValidator
 from ..segmenters.text_segmenter import TextSegmenter
 from ..prompts import (
     CALIBRATE_SYSTEM_PROMPT,
@@ -27,7 +27,7 @@ class PlainTextProcessor:
         config: LLMConfig,
         llm_client: LLMClient,
         key_info_extractor: KeyInfoExtractor,
-        quality_validator: QualityValidator,
+        quality_validator: UnifiedQualityValidator,
     ):
         """初始化无说话人文本处理器
 
@@ -144,7 +144,7 @@ class PlainTextProcessor:
         calibrated_segments = [None] * len(segments)
 
         def calibrate_single_segment(index: int, segment: str):
-            """校对单个分段（含长度检查 + 二次校对）"""
+            """校对单个分段（含长度检查 + 质量验证 + 二次校对）"""
             try:
                 original_length = len(segment)
                 logger.debug(f"Calibrating segment {index + 1}/{len(segments)}, length: {original_length}")
@@ -168,21 +168,25 @@ class PlainTextProcessor:
                 calibrated_text = response.text
                 calibrated_length = len(calibrated_text)
 
-                # 分段级别长度检查
-                min_length = int(original_length * self.config.min_calibrate_ratio)
+                pass_ratio = self.config.segmentation_pass_ratio
+                force_retry_ratio = self.config.segmentation_force_retry_ratio
+                fallback_strategy = self.config.segmentation_fallback_strategy
 
-                if calibrated_length >= min_length:
-                    # 长度合格
+                ratio = calibrated_length / original_length if original_length > 0 else 0.0
+
+                # 绿灯区：直接通过
+                if ratio >= pass_ratio:
                     calibrated_segments[index] = calibrated_text
                     logger.debug(
-                        f"Segment {index + 1} calibration passed: "
-                        f"{original_length} -> {calibrated_length} (>= {min_length})"
+                        f"Segment {index + 1} passed length ratio: "
+                        f"{ratio:.2f} >= {pass_ratio}"
                     )
-                else:
-                    # 长度不足，二次校对
+                    return
+
+                # 红灯区：触发重试
+                if ratio < force_retry_ratio:
                     logger.warning(
-                        f"Segment {index + 1} too short: {calibrated_length} < {min_length}, "
-                        f"retrying with hint..."
+                        f"Segment {index + 1} too short: ratio {ratio:.2f} < {force_retry_ratio}, retrying..."
                     )
 
                     retry_hint = (
@@ -209,22 +213,77 @@ class PlainTextProcessor:
 
                     calibrated_text_retry = response_retry.text
                     calibrated_length_retry = len(calibrated_text_retry)
+                    retry_ratio = calibrated_length_retry / original_length if original_length > 0 else 0.0
 
-                    if calibrated_length_retry >= min_length:
-                        # 二次校对通过
+                    if retry_ratio >= pass_ratio:
                         calibrated_segments[index] = calibrated_text_retry
                         logger.info(
-                            f"Segment {index + 1} retry passed: "
-                            f"{original_length} -> {calibrated_length_retry} (>= {min_length})"
+                            f"Segment {index + 1} retry passed length ratio: "
+                            f"{retry_ratio:.2f} >= {pass_ratio}"
                         )
-                    else:
-                        # 二次校对仍不通过，降级到原文（格式化处理）
-                        formatted_segment = self._format_plain_text(segment)
-                        calibrated_segments[index] = formatted_segment
+                        return
+
+                    if retry_ratio < force_retry_ratio:
+                        # 仍在红灯区
+                        calibrated_segments[index] = self._fallback_plain_text(
+                            segment,
+                            calibrated_text,
+                            calibrated_text_retry,
+                            fallback_strategy,
+                        )
                         logger.warning(
                             f"Segment {index + 1} retry still too short: "
-                            f"{calibrated_length_retry} < {min_length}, falling back to formatted original"
+                            f"{retry_ratio:.2f} < {force_retry_ratio}, fallback={fallback_strategy}"
                         )
+                        return
+
+                    # 黄灯区：进入质量验证或直接接受
+                    candidate = calibrated_text_retry
+                    if self.config.segmentation_validation_enabled:
+                        validation_result = self.quality_validator.validate(
+                            original=segment,
+                            calibrated=candidate,
+                            context={"title": title, "author": "", "description": description},
+                            selected_models=selected_models,
+                        )
+                        if validation_result.get("passed"):
+                            calibrated_segments[index] = candidate
+                            return
+
+                        calibrated_segments[index] = self._fallback_plain_text(
+                            segment,
+                            calibrated_text,
+                            candidate,
+                            fallback_strategy,
+                            validation_result,
+                        )
+                        return
+
+                    calibrated_segments[index] = candidate
+                    return
+
+                # 黄灯区：触发质量验证（或直接通过）
+                if self.config.segmentation_validation_enabled:
+                    validation_result = self.quality_validator.validate(
+                        original=segment,
+                        calibrated=calibrated_text,
+                        context={"title": title, "author": "", "description": description},
+                        selected_models=selected_models,
+                    )
+                    if validation_result.get("passed"):
+                        calibrated_segments[index] = calibrated_text
+                        return
+
+                    calibrated_segments[index] = self._fallback_plain_text(
+                        segment,
+                        calibrated_text,
+                        None,
+                        fallback_strategy,
+                        validation_result,
+                    )
+                    return
+
+                calibrated_segments[index] = calibrated_text
 
             except Exception as e:
                 logger.error(f"Segment {index + 1} calibration failed: {e}")
@@ -244,6 +303,32 @@ class PlainTextProcessor:
                 future.result()  # 等待完成
 
         return calibrated_segments
+
+    def _fallback_plain_text(
+        self,
+        original: str,
+        first_attempt: Optional[str],
+        second_attempt: Optional[str],
+        fallback_strategy: str,
+        validation_result: Optional[Dict] = None,
+    ) -> str:
+        """处理纯文本分段的降级策略"""
+        if fallback_strategy == "formatted_original":
+            return self._format_plain_text(original)
+
+        if fallback_strategy == "second_attempt" and second_attempt:
+            return second_attempt
+
+        if fallback_strategy == "best_quality":
+            if validation_result and validation_result.get("overall_score") is not None:
+                return second_attempt or first_attempt or self._format_plain_text(original)
+
+            # 无评分时采用长度更接近原文者
+            candidates = [c for c in [first_attempt, second_attempt] if c]
+            if candidates:
+                return max(candidates, key=lambda c: len(c))
+
+        return self._format_plain_text(original)
 
     def _format_plain_text(self, text: str) -> str:
         """格式化纯文本，智能调整段落长度以提升可读性

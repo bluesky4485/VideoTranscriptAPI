@@ -494,6 +494,16 @@ def build_validation_user_prompt(
 
 
 # ============================================================
+# 统一质量验证 Prompt 模板
+# ============================================================
+
+from .unified_validation_prompts import (  # noqa: E402
+    UNIFIED_VALIDATION_SYSTEM_PROMPT,
+    build_unified_validation_user_prompt,
+)
+
+
+# ============================================================
 # 说话人推断任务 Prompt 模板
 # ============================================================
 

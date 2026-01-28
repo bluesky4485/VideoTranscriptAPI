@@ -9,7 +9,7 @@ from ..core.config import LLMConfig
 from ..core.llm_client import LLMClient
 from ..core.key_info_extractor import KeyInfoExtractor, KeyInfo
 from ..core.speaker_inferencer import SpeakerInferencer
-from ..core.quality_validator import QualityValidator
+from ..validators.unified_quality_validator import UnifiedQualityValidator
 from ..segmenters.dialog_segmenter import DialogSegmenter
 from ..prompts import (
     STRUCTURED_CALIBRATE_SYSTEM_PROMPT,
@@ -29,7 +29,7 @@ class SpeakerAwareProcessor:
         llm_client: LLMClient,
         key_info_extractor: KeyInfoExtractor,
         speaker_inferencer: SpeakerInferencer,
-        quality_validator: QualityValidator,
+        quality_validator: UnifiedQualityValidator,
     ):
         """初始化有说话人文本处理器
 
@@ -353,6 +353,10 @@ class SpeakerAwareProcessor:
             )
 
             max_attempts = self.config.max_calibration_retries + 1
+            fallback_strategy = self.config.structured_fallback_strategy
+
+            best_quality_score = None
+            best_quality_candidate = None
             for attempt in range(max_attempts):
                 try:
                     # 构建 prompt（包含对话结构）
@@ -382,34 +386,40 @@ class SpeakerAwareProcessor:
                         "calibrated_dialogs", []
                     )
 
-                    # 合并校对结果与原始对话（保留时间戳）
+                    # 合并校对结果与原始对话（保留时间戳 + 强制结构一致性检查）
                     merged_dialogs = self._merge_calibrated_with_original(
                         calibrated_dialogs, chunk
                     )
 
-                    # 若数量不一致，合并会降级为原始 chunk
+                    # 若数量或说话人不一致，合并会降级为原始 chunk
                     if merged_dialogs is chunk:
                         logger.warning(
-                            f"Chunk {index + 1} calibration result count mismatch, "
+                            f"Chunk {index + 1} calibration result structure mismatch, "
                             f"falling back to original"
                         )
                         calibrated_chunks[index] = chunk
                         return
 
                     # 步骤4: 分段质量验证（可选）
-                    if self.config.enable_validation:
+                    if self.config.structured_validation_enabled:
                         logger.debug(f"Validating chunk {index + 1}/{len(chunks)}")
 
-                        validation_result = self.quality_validator.validate_by_score(
+                        validation_result = self.quality_validator.validate(
                             original=chunk,
                             calibrated=merged_dialogs,
-                            video_metadata={
+                            context={
                                 "title": title,
                                 "author": "",
                                 "description": description,
                             },
                             selected_models=selected_models,
                         )
+
+                        if validation_result.get("overall_score") is not None:
+                            score = validation_result.get("overall_score", 0)
+                            if best_quality_score is None or score > best_quality_score:
+                                best_quality_score = score
+                                best_quality_candidate = merged_dialogs
 
                         if not validation_result["passed"]:
                             if attempt < max_attempts - 1:
@@ -423,9 +433,14 @@ class SpeakerAwareProcessor:
                             logger.warning(
                                 f"Chunk {index + 1} validation failed "
                                 f"(score: {validation_result.get('overall_score', 'N/A')}), "
-                                f"falling back to original"
+                                f"fallback strategy={fallback_strategy}"
                             )
-                            calibrated_chunks[index] = chunk
+                            calibrated_chunks[index] = self._apply_structured_fallback(
+                                original_chunk=chunk,
+                                best_candidate=best_quality_candidate,
+                                last_candidate=merged_dialogs,
+                                fallback_strategy=fallback_strategy,
+                            )
                             return
 
                         logger.debug(
@@ -446,7 +461,12 @@ class SpeakerAwareProcessor:
                         continue
 
                     logger.error(f"Chunk {index + 1} calibration failed: {e}")
-                    calibrated_chunks[index] = chunk  # 降级到原文
+                    calibrated_chunks[index] = self._apply_structured_fallback(
+                        original_chunk=chunk,
+                        best_candidate=best_quality_candidate,
+                        last_candidate=merged_dialogs if 'merged_dialogs' in locals() else None,
+                        fallback_strategy=fallback_strategy,
+                    )
                     return
 
         # 并发处理
@@ -516,15 +536,35 @@ class SpeakerAwareProcessor:
             original = original_chunk[idx]
             original_text = original.get("original_text", original.get("text", ""))
 
+            # 结构一致性检查：说话人必须保持一致
+            if calibrated.get("speaker") != original.get("speaker"):
+                return original_chunk
+
             merged_dialogs.append(
                 {
                     "start_time": original.get("start_time", "00:00:00"),
                     "end_time": original.get("end_time", "00:00:00"),
                     "duration": original.get("duration", 0),
-                    "speaker": calibrated.get("speaker", original.get("speaker", "unknown")),
+                    "speaker": original.get("speaker", "unknown"),
                     "text": calibrated.get("text", original.get("text", "")),
                     "original_text": original_text,
                 }
             )
 
         return merged_dialogs
+
+    def _apply_structured_fallback(
+        self,
+        original_chunk: List[Dict],
+        best_candidate: Optional[List[Dict]],
+        last_candidate: Optional[List[Dict]],
+        fallback_strategy: str,
+    ) -> List[Dict]:
+        """结构化校对失败时的降级策略"""
+        if fallback_strategy == "second_attempt" and last_candidate:
+            return last_candidate
+
+        if fallback_strategy == "best_quality" and best_candidate:
+            return best_candidate
+
+        return original_chunk

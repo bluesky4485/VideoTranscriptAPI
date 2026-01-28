@@ -26,7 +26,7 @@ from src.video_transcript_api.llm.core.config import LLMConfig
 from src.video_transcript_api.llm.core.llm_client import LLMClient
 from src.video_transcript_api.llm.core.key_info_extractor import KeyInfoExtractor
 from src.video_transcript_api.llm.core.speaker_inferencer import SpeakerInferencer
-from src.video_transcript_api.llm.core.quality_validator import QualityValidator
+from src.video_transcript_api.llm.validators.unified_quality_validator import UnifiedQualityValidator
 from src.video_transcript_api.llm.processors.speaker_aware_processor import SpeakerAwareProcessor
 from src.video_transcript_api.utils.logging import setup_logger
 
@@ -60,11 +60,10 @@ class ValidationScoreCollector:
 
         # 收集各维度分数
         dimension_scores = {
-            "format_correctness": [],
-            "content_fidelity": [],
-            "text_quality": [],
-            "speaker_consistency": [],
-            "time_consistency": [],
+            "accuracy": [],
+            "completeness": [],
+            "fluency": [],
+            "format": [],
         }
 
         for score in self.scores:
@@ -228,15 +227,16 @@ def load_test_data(num_segments: int = 30) -> tuple:
 class QualityValidatorWrapper:
     """质量验证器包装类，用于收集打分数据"""
 
-    def __init__(self, validator: QualityValidator, collector: ValidationScoreCollector):
+    def __init__(self, validator: UnifiedQualityValidator, collector: ValidationScoreCollector):
         self.validator = validator
         self.collector = collector
         self.current_chunk_index = 0
 
-    def validate_by_score(self, original, calibrated, video_metadata=None, selected_models=None):
+    def validate(self, original, calibrated, context=None, selected_models=None):
         """包装的验证方法，自动收集打分结果"""
-        result = self.validator.validate_by_score(
-            original, calibrated, video_metadata, selected_models
+        ctx = context or {}
+        result = self.validator.validate(
+            original, calibrated, ctx, selected_models
         )
 
         # 收集打分结果
@@ -244,14 +244,6 @@ class QualityValidatorWrapper:
         self.current_chunk_index += 1
 
         return result
-
-    def validate_by_length(self, original, calibrated, min_ratio=0.80):
-        """代理方法"""
-        return self.validator.validate_by_length(original, calibrated, min_ratio)
-
-    def _check_threshold(self, overall_score, scores):
-        """代理方法"""
-        return self.validator._check_threshold(overall_score, scores)
 
     # 代理其他属性
     def __getattr__(self, name):
@@ -271,6 +263,7 @@ def main():
     llm_config = LLMConfig.from_dict(config_dict)
 
     # 强制启用分段质量验证
+    llm_config.structured_validation_enabled = True
     llm_config.enable_validation = True
 
     # 使用串行执行以确保打分结果的顺序与chunk索引一致
@@ -307,10 +300,11 @@ def main():
         reasoning_effort=llm_config.speaker_reasoning_effort,
     )
 
-    quality_validator = QualityValidator(
+    quality_validator = UnifiedQualityValidator(
         llm_client=llm_client,
-        model=llm_config.validator_model,
+        model=llm_config.validator_model or llm_config.calibrate_model,
         reasoning_effort=llm_config.validator_reasoning_effort,
+        score_weights=llm_config.quality_score_weights,
         overall_score_threshold=llm_config.overall_score_threshold,
         minimum_single_score=llm_config.minimum_single_score,
     )

@@ -17,7 +17,7 @@ from video_transcript_api.llm.processors.plain_text_processor import PlainTextPr
 from video_transcript_api.llm.core.config import LLMConfig
 from video_transcript_api.llm.core.llm_client import LLMClient
 from video_transcript_api.llm.core.key_info_extractor import KeyInfoExtractor
-from video_transcript_api.llm.core.quality_validator import QualityValidator
+from video_transcript_api.llm.validators.unified_quality_validator import UnifiedQualityValidator
 
 
 def create_test_processor():
@@ -38,7 +38,19 @@ def create_test_processor():
         base_url="http://test",
     )
     key_info_extractor = KeyInfoExtractor(llm_client, "test-model")
-    quality_validator = QualityValidator(llm_client)
+    quality_validator = UnifiedQualityValidator(
+        llm_client=llm_client,
+        model="test-model",
+        reasoning_effort=None,
+        score_weights={
+            "accuracy": 0.4,
+            "completeness": 0.3,
+            "fluency": 0.2,
+            "format": 0.1,
+        },
+        overall_score_threshold=8.0,
+        minimum_single_score=7.0,
+    )
 
     return PlainTextProcessor(
         config=config,
