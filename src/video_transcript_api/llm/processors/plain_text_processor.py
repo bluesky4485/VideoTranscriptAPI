@@ -246,10 +246,16 @@ class PlainTextProcessor:
         return calibrated_segments
 
     def _format_plain_text(self, text: str) -> str:
-        """格式化纯文本，通过标点符号分段提高可读性
+        """格式化纯文本，智能调整段落长度以提升可读性
 
-        当校对失败降级到原始文本时，如果原文是一长串没有换行符的文本，
-        本方法会在句子结束标点后添加换行符，提高可读性。
+        核心目标：
+        1. 段落不能太长（避免文字墙）
+        2. 段落不能太短（避免每句一行，浪费屏幕空间）
+
+        处理策略：
+        - 类型A：长文本墙（行数很少，平均每行很长）→ 按句子分段
+        - 类型B：过度分割（行数很多，平均每行很短）→ 合并成段落
+        - 类型C：合理段落（段落长度适中）→ 保持原样
 
         Args:
             text: 原始文本
@@ -257,29 +263,143 @@ class PlainTextProcessor:
         Returns:
             格式化后的文本
         """
-        # 如果文本已经有足够的换行符，直接返回
-        # 条件：文本长度 >= 300 字符 且 平均每200字符至少有一个换行
-        lines = text.split('\n')
-        if len(text) >= 300 and len(lines) > len(text) / 200:
-            logger.debug("Text already has sufficient line breaks, skipping formatting")
+        if not text or len(text) < 100:
             return text
 
-        logger.info(f"Formatting plain text with {len(text)} characters and {len(lines)} lines")
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        line_count = len(lines)
+        text_length = len(text)
+        avg_line_length = text_length / line_count if line_count > 0 else 0
 
-        # 定义句子结束标点的正则模式
-        # 匹配中文句号、问号、感叹号、分号或英文对应标点
-        pattern = r'([。！？；.!?;]+)(\s*)'
+        # 检测是否有段落结构（双换行 \n\n）
+        has_paragraph_breaks = '\n\n' in text
+        paragraph_count = len(text.split('\n\n')) if has_paragraph_breaks else 0
 
-        # 在句子结束标点后添加换行符
-        formatted_text = re.sub(pattern, r'\1\n', text)
+        logger.info(
+            f"Analyzing text structure: {text_length} chars, {line_count} lines, "
+            f"avg {avg_line_length:.1f} chars/line, "
+            f"paragraph_breaks={has_paragraph_breaks}, paragraphs={paragraph_count}"
+        )
 
-        # 清理多余的空行（超过2个连续换行符的情况）
-        formatted_text = re.sub(r'\n{3,}', '\n\n', formatted_text)
+        # 类型判断：判断文本结构类型
+        # 类型C1：已有段落结构（双换行分隔）
+        if has_paragraph_breaks and paragraph_count >= 2:
+            logger.debug("Text already has paragraph structure (\\n\\n), skipping formatting")
+            return text
 
-        # 清理首尾空白
-        formatted_text = formatted_text.strip()
+        # 类型C2：合理段落（5-50行 且 平均每行50-200字符）
+        if 5 <= line_count <= 50 and 50 <= avg_line_length <= 200:
+            logger.debug("Text has reasonable line structure, skipping formatting")
+            return text
 
-        formatted_lines = formatted_text.split('\n')
-        logger.info(f"Formatting completed: {len(formatted_lines)} lines")
+        # 类型B：过度分割（行数多 且 平均每行很短）
+        if line_count > 10 and avg_line_length < 50:
+            logger.info("Detected over-segmented text, merging into paragraphs")
+            return self._merge_into_paragraphs(lines)
 
-        return formatted_text
+        # 类型A：长文本墙（行数很少 且 平均每行很长）
+        if line_count <= 3 or avg_line_length > 200:
+            logger.info("Detected text wall, splitting into paragraphs")
+            return self._split_into_paragraphs(text)
+
+        # 默认：保持原样
+        logger.debug("Text structure is acceptable, keeping original")
+        return text
+
+    def _merge_into_paragraphs(self, lines: List[str]) -> str:
+        """合并过度分割的短行为合理段落
+
+        策略：每2-4句为一段，目标段落长度100-300字符
+
+        Args:
+            lines: 短行列表
+
+        Returns:
+            合并后的段落文本
+        """
+        paragraphs = []
+        current_para = ""
+        sentence_count = 0
+
+        for line in lines:
+            # 跳过空行
+            if not line:
+                continue
+
+            # 累积句子
+            current_para += line
+            if not line.endswith(('。', '！', '？', '!', '?', '.', ';', '；')):
+                current_para += '。'  # 补充标点
+            sentence_count += 1
+
+            # 判断是否形成段落：2-4句 或 长度达到100-300字符
+            if sentence_count >= 2 and len(current_para) >= 100:
+                paragraphs.append(current_para)
+                current_para = ""
+                sentence_count = 0
+            elif sentence_count >= 4 or len(current_para) >= 300:
+                # 强制换段（避免段落过长）
+                paragraphs.append(current_para)
+                current_para = ""
+                sentence_count = 0
+
+        # 处理剩余内容
+        if current_para:
+            paragraphs.append(current_para)
+
+        result = '\n\n'.join(paragraphs)
+        logger.info(f"Merged {len(lines)} lines into {len(paragraphs)} paragraphs")
+        return result
+
+    def _split_into_paragraphs(self, text: str) -> str:
+        """拆分长文本墙为合理段落
+
+        策略：按句子分割，每2-3句为一段
+
+        Args:
+            text: 长文本
+
+        Returns:
+            分段后的文本
+        """
+        # 按句子结束标点分割
+        pattern = r'([。！？!?]+)'
+        parts = re.split(pattern, text)
+
+        # 重新组合句子（文本 + 标点）
+        sentences = []
+        for i in range(0, len(parts) - 1, 2):
+            if parts[i].strip():
+                sentence = parts[i].strip() + (parts[i + 1] if i + 1 < len(parts) else '')
+                sentences.append(sentence)
+
+        # 处理最后一个片段（可能没有标点）
+        if len(parts) % 2 == 1 and parts[-1].strip():
+            sentences.append(parts[-1].strip())
+
+        # 按2-3句分组形成段落
+        paragraphs = []
+        current_para = ""
+        sentence_count = 0
+
+        for sentence in sentences:
+            current_para += sentence
+            sentence_count += 1
+
+            # 每2-3句换段，或长度超过250字符
+            if sentence_count >= 2 and len(current_para) >= 100:
+                paragraphs.append(current_para)
+                current_para = ""
+                sentence_count = 0
+            elif sentence_count >= 3 or len(current_para) >= 250:
+                paragraphs.append(current_para)
+                current_para = ""
+                sentence_count = 0
+
+        # 处理剩余内容
+        if current_para:
+            paragraphs.append(current_para)
+
+        result = '\n\n'.join(paragraphs)
+        logger.info(f"Split {len(sentences)} sentences into {len(paragraphs)} paragraphs")
+        return result
