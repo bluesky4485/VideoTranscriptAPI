@@ -162,6 +162,8 @@ class URLParser:
         """
         解析短链接（HTTP HEAD 请求）
 
+        SSRF 防护：解析后会验证目标 URL 不指向私有地址。
+
         Args:
             url: 短链接 URL
             timeout: 请求超时时间（秒）
@@ -175,6 +177,14 @@ class URLParser:
             resolved_url = response.url
 
             if resolved_url and resolved_url != url:
+                # SSRF 防护：验证解析后的 URL 安全性
+                try:
+                    from .url_validator import validate_url_safe
+                    validate_url_safe(resolved_url)
+                except Exception as e:
+                    logger.warning(f"Short URL resolved to unsafe target: {resolved_url}, reason: {e}")
+                    return url
+
                 logger.debug(f"短链接解析成功: {url} -> {resolved_url}")
                 return resolved_url
             else:

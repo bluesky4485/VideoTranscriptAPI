@@ -280,6 +280,15 @@ def process_transcription(
         if download_url is not None and isinstance(download_url, str) and not download_url.strip():
             download_url = None
 
+        # SSRF 防护：验证 download_url 安全性
+        if download_url:
+            from ...utils.url_validator import validate_url_safe, URLValidationError
+            try:
+                validate_url_safe(download_url)
+            except URLValidationError as e:
+                logger.warning(f"download_url SSRF check failed: {download_url}, reason: {e}")
+                raise ValueError(f"download_url is not allowed: {e}")
+
         logger.info(f"开始处理转录任务: {task_id}, URL: {url}, download_url: {download_url}")
 
         # url 本身就是平台链接，直接使用

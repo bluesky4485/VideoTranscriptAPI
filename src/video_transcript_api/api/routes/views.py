@@ -191,7 +191,7 @@ def handle_raw_export(view_data: Dict[str, Any], export_type: str) -> Response:
     except Exception as exc:
         logger.error("读取文件失败: %s, 错误: %s", file_path, exc)
         return Response(
-            content=f"❌ 读取文件失败: {exc}",
+            content="❌ 读取文件失败，请稍后重试",
             media_type="text/plain; charset=utf-8",
             status_code=500,
         )
@@ -222,7 +222,7 @@ async def add_task_by_web(request: Request):
             )
     except Exception as exc:
         logger.exception("访问Web任务添加页面异常: %s", exc)
-        raise HTTPException(status_code=500, detail=f"访问页面失败: {exc}")
+        raise HTTPException(status_code=500, detail="访问页面失败，请稍后重试")
 
 
 @router.get("/export/{view_token}/{export_type}")
@@ -287,7 +287,7 @@ async def export_content(view_token: str, export_type: str, request: Request):
         except Exception as exc:
             logger.error("读取文件失败: %s, 错误: %s", file_path, exc)
             return Response(
-                content=f"❌ 读取文件失败: {exc}",
+                content="❌ 读取文件失败，请稍后重试",
                 media_type="text/plain; charset=utf-8",
                 status_code=500,
             )
@@ -318,7 +318,7 @@ async def export_content(view_token: str, export_type: str, request: Request):
     except Exception as exc:
         logger.exception("导出文件异常: %s", exc)
         return Response(
-            content=f"❌ 导出失败: {exc}",
+            content="❌ 导出失败，请稍后重试",
             media_type="text/plain; charset=utf-8",
             status_code=500,
         )
@@ -464,6 +464,6 @@ async def view_transcript(view_token: str, request: Request, raw: Optional[str] 
             "error.html",
             {
                 "request": request,
-                "message": f"查看页面失败: {exc}",
+                "message": "查看页面失败，请稍后重试",
             },
         )

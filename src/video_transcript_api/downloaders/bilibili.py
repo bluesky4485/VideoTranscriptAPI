@@ -229,25 +229,25 @@ class BilibiliDownloader(BaseDownloader):
             # 提取分P号
             page_num = self._extract_page_number(url)
 
-            # 在Windows上，使用完整的命令字符串
+            # 统一使用列表形式执行命令（避免 shell=True 带来的命令注入风险）
             if system_platform == "windows":
-                cmd = f'"{bbdown_path}" "{url}" -p {page_num}'
+                download_args = [bbdown_path, url, "-p", str(page_num)]
                 if audio_only:
-                    cmd += " --audio-only"
-                logger.info(f"执行BBDown命令: {cmd}")
+                    download_args.append("--audio-only")
 
-                # 在Windows上使用shell=True执行命令
+                logger.info(f"执行BBDown命令: {' '.join(download_args)}")
                 timeout = bbdown_config.get("timeout", 300)
+
                 try:
                     process = subprocess.run(
-                        cmd,
+                        download_args,
                         cwd=temp_dir,
-                        shell=True,
+                        shell=False,
                         check=True,
                         capture_output=True,
                         text=True,
-                        encoding="utf-8",  # 显式指定UTF-8编码
-                        errors="replace",  # 替换无法解码的字符
+                        encoding="utf-8",
+                        errors="replace",
                         timeout=timeout,
                     )
 
