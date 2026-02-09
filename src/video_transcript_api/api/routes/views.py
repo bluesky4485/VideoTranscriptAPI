@@ -29,20 +29,95 @@ static_dir = get_static_dir()
 
 router = APIRouter()
 
-# robots.txt：明确允许 AI 工具的 URL fetcher 访问 /view/ 和 /export/ 端点
-_ROBOTS_TXT = """\
+# robots.txt：允许首页和分享页面被收录，禁止 API 和静态资源
+_ROBOTS_TXT_TEMPLATE = """\
 User-agent: *
-Allow: /view/
-Allow: /export/
+Allow: /
 Disallow: /api/
 Disallow: /static/
+Sitemap: {base_url}/sitemap.xml
+"""
+
+# sitemap.xml：仅包含首页，引导搜索引擎只收录首页
+_SITEMAP_XML_TEMPLATE = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>{base_url}/</loc>
+  </url>
+</urlset>
 """
 
 
 @router.get("/robots.txt", include_in_schema=False)
 async def robots_txt():
-    """返回 robots.txt，允许外部 AI 工具 (Gemini, Claude 等) 访问分享页面."""
-    return Response(content=_ROBOTS_TXT, media_type="text/plain")
+    """返回 robots.txt，允许首页被搜索引擎收录以建立域名信任."""
+    base_url = get_base_url()
+    content = _ROBOTS_TXT_TEMPLATE.format(base_url=base_url)
+    return Response(content=content, media_type="text/plain")
+
+
+@router.get("/sitemap.xml", include_in_schema=False)
+async def sitemap_xml():
+    """返回 sitemap.xml，仅包含首页以引导搜索引擎收录."""
+    base_url = get_base_url()
+    content = _SITEMAP_XML_TEMPLATE.format(base_url=base_url)
+    return Response(content=content, media_type="application/xml")
+
+
+# 首页 HTML：简洁的服务介绍页，供搜索引擎收录以建立域名信任
+_HOME_HTML = """\
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Transcript API - 视频转录服务</title>
+    <meta name="description" content="Video Transcript API 是一个多平台视频转录服务，支持 YouTube、Bilibili、抖音等平台的视频语音转文字，并提供 AI 校对与总结功能。">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 700px;
+            margin: 60px auto;
+            padding: 20px;
+            background: #f8f9fa;
+        }
+        .card {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            padding: 40px;
+        }
+        h1 { font-size: 1.6rem; margin: 0 0 8px 0; }
+        .subtitle { color: #6b7280; margin: 0 0 24px 0; font-size: 0.95rem; }
+        ul { padding-left: 20px; }
+        li { margin-bottom: 6px; }
+        .footer { margin-top: 24px; font-size: 0.85rem; color: #9ca3af; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Video Transcript API</h1>
+        <p class="subtitle">多平台视频转录与 AI 校对服务</p>
+        <ul>
+            <li>支持 YouTube、Bilibili、抖音、小红书、小宇宙等平台</li>
+            <li>语音转文字 + LLM 智能校对</li>
+            <li>自动生成内容总结</li>
+            <li>提供分享链接与多格式导出</li>
+        </ul>
+        <p class="footer">Powered by Video Transcript API</p>
+    </div>
+</body>
+</html>
+"""
+
+
+@router.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def home():
+    """首页：简洁的服务介绍，供搜索引擎收录以建立域名信任."""
+    return HTMLResponse(content=_HOME_HTML)
 
 
 def sanitize_filename(filename: str) -> str:
