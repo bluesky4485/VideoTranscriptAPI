@@ -162,13 +162,14 @@ class LLMCoordinator:
         # 步骤 4: 合并结果
         return {
             "calibrated_text": calibrated_text,
-            "summary_text": summary_text,  # 新增字段
+            "summary_text": summary_text,
             "key_info": calibration_result.get("key_info"),
             "stats": {
                 **calibration_result.get("stats", {}),
-                "summary_length": len(summary_text) if summary_text else 0,  # 新增
+                "summary_length": len(summary_text) if summary_text else 0,
             },
             "structured_data": calibration_result.get("structured_data"),
+            "models_used": selected_models,
         }
 
     def _route_to_calibration_processor(

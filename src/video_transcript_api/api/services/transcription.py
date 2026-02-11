@@ -1394,7 +1394,7 @@ def _handle_llm_task(llm_task: dict):
                     "内容总结": summary_text_new,  # 使用新架构返回的总结
                     "skip_summary": should_skip_summary,
                     "stats": coordinator_result.get("stats", {}),
-                    "models_used": {},  # TODO: 从新架构获取使用的模型信息
+                    "models_used": coordinator_result.get("models_used", {}),
                     "calibrate_success": True,
                     "summary_success": summary_text_new is not None,  # 根据总结是否存在判断
                 }
