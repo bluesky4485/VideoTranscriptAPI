@@ -723,6 +723,48 @@ Content-Type: text/plain; charset=utf-8
 ...
 ```
 
+### 🌐 Page 模式导出（HTML 页面）
+
+**访问地址**：`GET /view/{view_token}?page=calibrated`
+
+**支持的导出类型**：`calibrated`、`summary`、`transcript`
+
+**功能说明**：
+- 返回完整的 HTML 页面，包含正确的 `<title>`、Open Graph meta 标签
+- 正文经过 Markdown → HTML 渲染，排版清晰
+- 极简语义化页面，适合爬虫抓取和浏览器阅读
+- 同时附带 `X-Document-Title`、`X-Platform` 等自定义 HTTP 响应头
+
+**响应示例**：
+```http
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+X-Document-Title: 视频标题
+X-Platform: youtube
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <title>视频标题 - 校对文本</title>
+    <meta property="og:title" content="视频标题 - 校对文本">
+    ...
+</head>
+<body>
+    <article>（渲染后的内容）</article>
+</body>
+</html>
+```
+
+**与 Raw 模式对比**：
+
+| | `?raw=` | `?page=` |
+|---|---|---|
+| 返回格式 | 纯文本 + YAML front matter | 完整 HTML 页面 |
+| 浏览器标题 | 显示 URL | 显示「视频标题 - 校对文本」|
+| Meta 标签 | 无（纯文本） | Open Graph、description 等 |
+| 正文渲染 | 原始文本 | Markdown → HTML |
+| 适用场景 | 程序抓取原始内容 | 爬虫抓取、浏览器阅读 |
+
 ### 📥 文件导出
 
 **访问地址**：`GET /export/{view_token}/{export_type}`
@@ -779,6 +821,7 @@ uv run pytest tests/cache/
 | `/add_task_by_web` | GET | Web任务提交页面 |
 | `/view/{view_token}` | GET | 结果查看页面 |
 | `/view/{view_token}?raw=calibrated` | GET | Raw 模式（纯文本输出） |
+| `/view/{view_token}?page=calibrated` | GET | Page 模式（HTML 页面导出，爬虫友好） |
 | `/export/{view_token}/{type}` | GET | 导出处理结果 |
 
 ### 请求参数
@@ -925,6 +968,17 @@ Content-Type: text/plain; charset=utf-8
 [张三] 大家好，我是张三
 ...
 ```
+
+### 🌐 Page 模式导出（HTML 页面）
+
+**访问地址**：`GET /view/{view_token}?page=calibrated`
+
+**支持的导出类型**：`calibrated`、`summary`、`transcript`
+
+**功能说明**：
+- 返回完整 HTML 页面，包含 `<title>`、Open Graph 等 meta 标签
+- 正文经过 Markdown → HTML 渲染
+- 极简语义化页面，适合爬虫抓取和浏览器阅读
 
 ### 📥 文件导出
 

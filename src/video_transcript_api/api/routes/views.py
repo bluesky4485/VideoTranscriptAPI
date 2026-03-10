@@ -204,6 +204,242 @@ def _build_metadata_headers(view_data: Dict[str, Any], export_type: str) -> dict
     return headers
 
 
+def _build_page_html(
+    view_data: Dict[str, Any], export_type: str, body_html: str
+) -> str:
+    """生成用于 ?page= 导出的极简 HTML 页面.
+
+    页面包含完整的 meta 标签（Open Graph 等），适合爬虫抓取，
+    同时提供干净的阅读体验。
+
+    Args:
+        view_data: 页面数据字典
+        export_type: 导出类型（calibrated/summary/transcript）
+        body_html: 已渲染的 HTML 正文内容
+
+    Returns:
+        完整的 HTML 字符串
+    """
+    import html as html_module
+
+    type_map = {
+        "calibrated": "校对文本",
+        "summary": "内容总结",
+        "transcript": "原始转录",
+    }
+
+    title = view_data.get("title", "未命名")
+    platform = view_data.get("platform", "unknown")
+    content_type_cn = type_map.get(export_type, export_type)
+    source_url = view_data.get("url", "")
+
+    # HTML 转义防止 XSS
+    safe_title = html_module.escape(title)
+    safe_platform = html_module.escape(platform)
+    safe_content_type = html_module.escape(content_type_cn)
+    safe_source_url = html_module.escape(source_url)
+
+    page_title = f"{safe_title} - {safe_content_type}"
+    og_desc = f"{safe_title} 的{safe_content_type}（{safe_platform}）"
+
+    return f"""\
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{page_title}</title>
+    <meta name="description" content="{og_desc}">
+    <meta name="robots" content="noindex">
+    <meta name="theme-color" content="#667eea">
+    <meta property="og:title" content="{page_title}">
+    <meta property="og:description" content="{og_desc}">
+    <meta property="og:type" content="article">
+    <meta property="og:locale" content="zh_CN">
+    <meta property="og:site_name" content="Video Transcript API">
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+                         "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+            line-height: 1.8;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 32px 20px;
+            background: #fafafa;
+        }}
+        article {{
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 1px 8px rgba(0,0,0,0.06);
+            padding: 40px;
+        }}
+        h1 {{
+            font-size: 1.5rem;
+            margin: 0 0 8px 0;
+            line-height: 1.4;
+        }}
+        .meta {{
+            color: #6b7280;
+            font-size: 0.875rem;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #e5e7eb;
+        }}
+        .meta a {{ color: #667eea; text-decoration: none; }}
+        .meta a:hover {{ text-decoration: underline; }}
+        .content {{ font-size: 1rem; }}
+        .content h1 {{ font-size: 1.3rem; }}
+        .content h2 {{ font-size: 1.15rem; }}
+        .content h3 {{ font-size: 1.05rem; }}
+        .content p {{ margin: 0.8em 0; }}
+        .content blockquote {{
+            border-left: 3px solid #667eea;
+            margin: 1em 0;
+            padding: 0.5em 1em;
+            color: #555;
+            background: #f8f9ff;
+        }}
+        .content pre {{
+            background: #f3f4f6;
+            padding: 12px 16px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 0.9rem;
+        }}
+        .content table {{
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1em 0;
+        }}
+        .content th, .content td {{
+            border: 1px solid #e5e7eb;
+            padding: 8px 12px;
+            text-align: left;
+        }}
+        .content th {{ background: #f9fafb; }}
+    </style>
+</head>
+<body>
+    <article>
+        <h1>{safe_title}</h1>
+        <div class="meta">
+            <span>{safe_content_type}</span>
+            {f' · <span>{safe_platform}</span>' if platform != 'unknown' else ''}
+            {f' · <a href="{safe_source_url}" rel="noopener">原始链接</a>' if source_url else ''}
+        </div>
+        <div class="content">
+            {body_html}
+        </div>
+    </article>
+</body>
+</html>"""
+
+
+def handle_page_export(view_data: Dict[str, Any], export_type: str) -> Response:
+    """处理 ?page= 模式导出请求，返回完整 HTML 页面.
+
+    与 ?raw= 返回纯文本不同，此模式返回包含完整 meta 标签的 HTML 页面，
+    正文经过 Markdown 渲染，适合爬虫抓取和浏览器阅读。
+
+    Args:
+        view_data: 页面数据字典
+        export_type: 导出类型（calibrated/summary/transcript）
+
+    Returns:
+        HTMLResponse 包含完整 HTML 页面
+    """
+    # 1. 检查任务状态（复用 raw export 的状态检查逻辑）
+    status = view_data.get("status")
+
+    if status in ["queued", "processing"]:
+        return HTMLResponse(
+            content="<html><body><p>校对文本正在生成中，请稍后再试...</p></body></html>",
+            status_code=202,
+        )
+    if status == "file_cleaned":
+        return HTMLResponse(
+            content="<html><body><p>该文件已被清理</p></body></html>",
+            status_code=410,
+        )
+    if status == "failed":
+        return HTMLResponse(
+            content="<html><body><p>任务处理失败</p></body></html>",
+            status_code=500,
+        )
+    if status != "success":
+        return HTMLResponse(
+            content=f"<html><body><p>任务状态异常: {status}</p></body></html>",
+            status_code=400,
+        )
+
+    # 2. 获取缓存目录
+    cache_dir = view_data.get("cache_dir")
+    if not cache_dir or not os.path.exists(cache_dir):
+        return HTMLResponse(
+            content="<html><body><p>缓存文件不存在</p></body></html>",
+            status_code=404,
+        )
+
+    # 3. 根据导出类型确定文件路径
+    if export_type == "calibrated":
+        file_path = Path(cache_dir) / "llm_calibrated.txt"
+    elif export_type == "summary":
+        file_path = Path(cache_dir) / "llm_summary.txt"
+    elif export_type == "transcript":
+        funasr_file = Path(cache_dir) / "transcript_funasr.json"
+        capswriter_file = Path(cache_dir) / "transcript_capswriter.txt"
+        file_path = funasr_file if funasr_file.exists() else capswriter_file
+    else:
+        return HTMLResponse(
+            content="<html><body><p>不支持的导出类型</p></body></html>",
+            status_code=400,
+        )
+
+    # 4. 检查文件存在
+    if not file_path or not file_path.exists():
+        content_type_cn = {
+            "calibrated": "校对文本",
+            "summary": "总结文本",
+            "transcript": "原始转录",
+        }.get(export_type, export_type)
+        return HTMLResponse(
+            content=f"<html><body><p>{content_type_cn}文件不存在</p></body></html>",
+            status_code=404,
+        )
+
+    # 5. 读取文件并渲染
+    try:
+        content = file_path.read_text(encoding="utf-8")
+    except Exception as exc:
+        logger.error("读取文件失败: %s, 错误: %s", file_path, exc)
+        return HTMLResponse(
+            content="<html><body><p>读取文件失败</p></body></html>",
+            status_code=500,
+        )
+
+    # 6. 将内容渲染为 HTML（Markdown -> HTML）
+    body_html = render_markdown_to_html(content)
+
+    # 7. 构建完整 HTML 页面
+    vt = view_data.get("view_token", "unknown")[:20]
+    logger.info(f"Page export: type={export_type}, view_token={vt}")
+
+    page_html = _build_page_html(view_data, export_type, body_html)
+
+    # 构建 HTTP 自定义响应头
+    custom_headers = _build_metadata_headers(view_data, export_type)
+
+    return HTMLResponse(
+        content=page_html,
+        headers={
+            "Cache-Control": "public, max-age=3600",
+            "X-Robots-Tag": "noindex",
+            **custom_headers,
+        },
+    )
+
+
 def sanitize_filename(filename: str) -> str:
     """
     清理文件名中的非法字符
@@ -526,7 +762,12 @@ async def export_content(view_token: str, export_type: str, request: Request):
 
 
 @router.get("/view/{view_token}", response_class=HTMLResponse)
-async def view_transcript(view_token: str, request: Request, raw: Optional[str] = None):
+async def view_transcript(
+    view_token: str,
+    request: Request,
+    raw: Optional[str] = None,
+    page: Optional[str] = None,
+):
     try:
         view_data = cache_manager.get_view_data_by_token(view_token)
         if not view_data:
@@ -534,6 +775,11 @@ async def view_transcript(view_token: str, request: Request, raw: Optional[str] 
                 return Response(
                     content="❌ 页面不存在\n\nview_token 无效或已过期。",
                     media_type="text/plain; charset=utf-8",
+                    status_code=404,
+                )
+            elif page:
+                return HTMLResponse(
+                    content="<html><body><p>页面不存在</p></body></html>",
                     status_code=404,
                 )
             else:
@@ -548,6 +794,10 @@ async def view_transcript(view_token: str, request: Request, raw: Optional[str] 
         # 如果请求导出原始文件（GitHub Raw 模式）
         if raw:
             return handle_raw_export(view_data, raw)
+
+        # 如果请求 HTML 页面导出（爬虫友好模式）
+        if page:
+            return handle_page_export(view_data, page)
 
         if view_data.get("created_at"):
             view_data["created_at_display"] = format_datetime_for_display(
