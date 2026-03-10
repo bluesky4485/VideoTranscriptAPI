@@ -1,5 +1,6 @@
 import os
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -74,6 +75,7 @@ _HOME_HTML = """\
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Video Transcript API - 视频转录服务</title>
     <meta name="description" content="Video Transcript API 是一个多平台视频转录服务，支持 YouTube、Bilibili、抖音等平台的视频语音转文字，并提供 AI 校对与总结功能。">
+    <meta name="theme-color" content="#667eea">
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
@@ -118,6 +120,88 @@ _HOME_HTML = """\
 async def home():
     """首页：简洁的服务介绍，供搜索引擎收录以建立域名信任."""
     return HTMLResponse(content=_HOME_HTML)
+
+
+def _build_text_metadata_header(view_data: Dict[str, Any], export_type: str) -> str:
+    """生成纯文本导出的 YAML front matter 风格元数据头.
+
+    Args:
+        view_data: 页面数据字典
+        export_type: 导出类型（calibrated/summary/transcript）
+
+    Returns:
+        包含元数据的字符串，以 '---' 分隔
+    """
+    type_map = {
+        "calibrated": "校对文本",
+        "summary": "总结文本",
+        "transcript": "原始转录",
+    }
+
+    title = view_data.get("title", "未命名")
+    platform = view_data.get("platform", "unknown")
+    source_url = view_data.get("url", "")
+    content_type_cn = type_map.get(export_type, export_type)
+    export_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    lines = [
+        "---",
+        f"Title: {title}",
+        f"Platform: {platform}",
+        f"Type: {content_type_cn}",
+    ]
+    if source_url:
+        lines.append(f"Source: {source_url}")
+    lines.append(f"Export-Date: {export_date}")
+    lines.append("---")
+    lines.append("")  # 元数据与正文之间的空行
+
+    return "\n".join(lines)
+
+
+def _build_metadata_headers(view_data: Dict[str, Any], export_type: str) -> dict:
+    """生成纯文本导出的 HTTP 自定义响应头.
+
+    HTTP 响应头仅支持 Latin-1 编码，因此对包含非 ASCII 字符的值
+    使用 RFC 5987 的 UTF-8'' 编码格式。
+
+    Args:
+        view_data: 页面数据字典
+        export_type: 导出类型（calibrated/summary/transcript）
+
+    Returns:
+        包含自定义响应头的字典
+    """
+    from urllib.parse import quote
+
+    type_map = {
+        "calibrated": "calibrated",
+        "summary": "summary",
+        "transcript": "transcript",
+    }
+
+    title = view_data.get("title", "未命名")
+    platform = view_data.get("platform", "unknown")
+    source_url = view_data.get("url", "")
+    content_type = type_map.get(export_type, export_type)
+
+    def _safe_header_value(value: str) -> str:
+        """将非 ASCII 值进行 URL 编码，确保 HTTP 头兼容性."""
+        try:
+            value.encode("latin-1")
+            return value
+        except UnicodeEncodeError:
+            return quote(value, safe="")
+
+    headers = {
+        "X-Document-Title": _safe_header_value(title),
+        "X-Platform": _safe_header_value(platform),
+        "X-Content-Type": content_type,
+    }
+    if source_url:
+        headers["X-Source-URL"] = _safe_header_value(source_url)
+
+    return headers
 
 
 def sanitize_filename(filename: str) -> str:
@@ -286,12 +370,19 @@ def handle_raw_export(view_data: Dict[str, Any], export_type: str) -> Response:
             status_code=500,
         )
 
-    # 6. 返回纯文本响应（Raw 模式不需要文件名头）
+    # 6. 返回纯文本响应，附带元数据头
     vt = view_data.get("view_token", "unknown")[:20]
     logger.info(f"Raw export: type={export_type}, view_token={vt}")
 
+    # 在正文顶部添加 YAML front matter 元数据
+    metadata_header = _build_text_metadata_header(view_data, export_type)
+    content_with_metadata = metadata_header + content
+
+    # 构建 HTTP 自定义响应头
+    custom_headers = _build_metadata_headers(view_data, export_type)
+
     # 明确设置响应头，提高外部 AI 工具 (Gemini 等) URL fetcher 的兼容性
-    content_bytes = content.encode("utf-8")
+    content_bytes = content_with_metadata.encode("utf-8")
     return Response(
         content=content_bytes,
         media_type="text/plain",
@@ -300,6 +391,7 @@ def handle_raw_export(view_data: Dict[str, Any], export_type: str) -> Response:
             "Cache-Control": "public, max-age=3600",
             "X-Content-Type-Options": "nosniff",
             "X-Robots-Tag": "noindex",
+            **custom_headers,
         },
     )
 
@@ -396,10 +488,19 @@ async def export_content(view_token: str, export_type: str, request: Request):
         from urllib.parse import quote
 
         encoded_filename = quote(filename)
+
+        # 在正文顶部添加 YAML front matter 元数据
+        metadata_header = _build_text_metadata_header(view_data, export_type)
+        content_with_metadata = metadata_header + content
+
+        # 构建 HTTP 自定义响应头
+        custom_headers = _build_metadata_headers(view_data, export_type)
+
         headers = {
             "Content-Type": "text/plain; charset=utf-8",
             "Content-Disposition": f"inline; filename*=UTF-8''{encoded_filename}",
             "X-Content-Type-Options": "nosniff",
+            **custom_headers,
         }
 
         logger.info(
@@ -410,7 +511,9 @@ async def export_content(view_token: str, export_type: str, request: Request):
         )
 
         return Response(
-            content=content, media_type="text/plain; charset=utf-8", headers=headers
+            content=content_with_metadata,
+            media_type="text/plain; charset=utf-8",
+            headers=headers,
         )
 
     except Exception as exc:
