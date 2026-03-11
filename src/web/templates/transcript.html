@@ -48,11 +48,28 @@
     </details>
     {% endif %}
 
+    <!-- 一键复制常用链接 -->
+    {% if view_token %}
+    <div class="quick-copy-bar">
+        <button class="quick-copy-btn" data-path="/view/{{ view_token }}?raw=calibrated" title="复制 Raw 校对文本 URL">
+            <span class="quick-copy-label">Raw 校对文本</span>
+            <span class="quick-copy-action">复制 URL</span>
+        </button>
+        <button class="quick-copy-btn" data-path="/view/{{ view_token }}?page=calibrated" title="复制 HTML 校对页面 URL">
+            <span class="quick-copy-label">HTML 校对页面</span>
+            <span class="quick-copy-action">复制 URL</span>
+        </button>
+    </div>
+    {% endif %}
+
     <!-- 导出链接栏 -->
     {% if view_token %}
-    <div class="export-links-bar">
-        <span class="export-icon">📤</span>
-        <div class="export-groups">
+    <details class="export-links-details">
+        <summary class="export-links-summary">
+            <span class="export-icon">📤</span>
+            <span class="export-summary-label">更多导出选项</span>
+        </summary>
+        <div class="export-links-content">
             <div class="export-group">
                 <span class="export-group-label">Raw 纯文本</span>
                 <span class="export-group-items">
@@ -76,7 +93,7 @@
                 <span class="export-hint">带标题与 Meta 标签，适合 NotebookLM 等工具爬取</span>
             </div>
         </div>
-    </div>
+    </details>
     {% endif %}
 
     <div class="section">

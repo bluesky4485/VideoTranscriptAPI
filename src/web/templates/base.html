@@ -700,28 +700,144 @@
             }
         }
 
-        /* ========== 导出链接栏样式 ========== */
-        .export-links-bar {
-            padding: 10px 30px;
+        /* ========== 一键复制按钮栏 ========== */
+        .quick-copy-bar {
+            padding: 12px 30px;
             margin: 0;
             background: rgba(0, 0, 0, 0.02);
             border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-            font-size: 0.85rem;
             display: flex;
-            align-items: flex-start;
             gap: 10px;
+            flex-wrap: wrap;
         }
 
-        .export-icon {
-            font-size: 0.95rem;
-            opacity: 0.8;
-            line-height: 1.6;
+        .quick-copy-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            border: 1px solid var(--border-primary);
+            border-radius: 6px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
         }
 
-        .export-groups {
+        .quick-copy-btn:hover {
+            border-color: #667eea;
+            background: rgba(102, 126, 234, 0.06);
+        }
+
+        .quick-copy-btn:active {
+            transform: scale(0.97);
+        }
+
+        .quick-copy-btn.copied {
+            border-color: #10b981;
+            background: rgba(16, 185, 129, 0.08);
+        }
+
+        .quick-copy-label {
+            font-weight: 500;
+        }
+
+        .quick-copy-action {
+            font-size: 0.75rem;
+            color: #667eea;
+            border-left: 1px solid var(--border-primary);
+            padding-left: 8px;
+        }
+
+        .quick-copy-btn.copied .quick-copy-action {
+            color: #10b981;
+        }
+
+        /* 深色主题适配 */
+        [data-theme="dark"] .quick-copy-bar {
+            background: rgba(255, 255, 255, 0.02);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        [data-theme="dark"] .quick-copy-btn {
+            background: var(--bg-secondary);
+        }
+
+        [data-theme="dark"] .quick-copy-btn:hover {
+            background: rgba(147, 165, 246, 0.1);
+        }
+
+        [data-theme="dark"] .quick-copy-action {
+            color: #93a5f6;
+        }
+
+        /* 响应式 */
+        @media (max-width: 480px) {
+            .quick-copy-bar {
+                padding: 10px 15px;
+            }
+
+            .quick-copy-btn {
+                flex: 1;
+                justify-content: center;
+                min-width: 0;
+            }
+        }
+
+        /* ========== 导出链接折叠栏样式 ========== */
+        .export-links-details {
+            padding: 0;
+            margin: 0;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+            font-size: 0.85rem;
+        }
+
+        .export-links-summary {
+            padding: 8px 30px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            user-select: none;
+            list-style: none;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+        }
+
+        .export-links-summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .export-links-summary::before {
+            content: '▶';
+            font-size: 0.6rem;
+            transition: transform 0.2s ease;
+        }
+
+        .export-links-details[open] .export-links-summary::before {
+            transform: rotate(90deg);
+        }
+
+        .export-summary-label {
+            opacity: 0.7;
+        }
+
+        .export-links-content {
+            padding: 4px 30px 10px 30px;
             display: flex;
             flex-direction: column;
             gap: 4px;
+        }
+
+        .export-icon {
+            font-size: 0.85rem;
+            opacity: 0.7;
+        }
+
+        /* 深色主题适配 */
+        [data-theme="dark"] .export-links-details {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
         }
 
         .export-group {
@@ -914,6 +1030,43 @@
             if (themeToggle) {
                 themeToggle.addEventListener('click', toggleTheme);
             }
+        });
+    </script>
+
+    <!-- 一键复制脚本 -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.quick-copy-btn').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    var path = btn.getAttribute('data-path');
+                    var fullUrl = window.location.origin + path;
+                    var actionEl = btn.querySelector('.quick-copy-action');
+                    var originalText = actionEl.textContent;
+
+                    navigator.clipboard.writeText(fullUrl).then(function() {
+                        btn.classList.add('copied');
+                        actionEl.textContent = 'Copied!';
+                        setTimeout(function() {
+                            btn.classList.remove('copied');
+                            actionEl.textContent = originalText;
+                        }, 1500);
+                    }).catch(function() {
+                        // Fallback: select from temp input
+                        var tmp = document.createElement('input');
+                        tmp.value = fullUrl;
+                        document.body.appendChild(tmp);
+                        tmp.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(tmp);
+                        btn.classList.add('copied');
+                        actionEl.textContent = 'Copied!';
+                        setTimeout(function() {
+                            btn.classList.remove('copied');
+                            actionEl.textContent = originalText;
+                        }, 1500);
+                    });
+                });
+            });
         });
     </script>
 </body>
