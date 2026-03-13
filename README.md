@@ -32,6 +32,8 @@
 
 本项目提供统一的视频/音频转录 API，支持从多个主流平台下载内容，并使用两种 ASR 引擎（CapsWriter-Offline / FunASR）进行语音识别。转录后的文本通过 LLM 进行智能校对、总结和说话人推断，同时内置缓存系统、风控机制和企业微信通知功能。
 
+开发契机和玩法分享：[LLM 吞噬一切，我用 AI 长出来的那些工具](https://mp.weixin.qq.com/s/w8VnWJcUp5VkD5J-fYCUrg)
+
 ### 外部依赖
 - [Tikhub API key，用于音视频解析下载。有 aff](https://user.tikhub.io/register?referral_code=YArXsaWi)
 - [zj1123581321/funasr_spk_server: funasr server 对应暴露 api，支持音视频转写，分角色，自动合并相同人物的话。](https://github.com/zj1123581321/funasr_spk_server)
