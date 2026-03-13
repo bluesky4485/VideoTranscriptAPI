@@ -99,3 +99,6 @@ tests/output
 tmpclaude-*
 
 tests/unit/data
+
+# Docker
+docker/data/
