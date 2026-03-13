@@ -613,6 +613,38 @@ cp config/config.example.jsonc config/config.jsonc
 uv run python main.py --start
 ```
 
+### Docker 部署
+
+除了本地安装，也可以通过 Docker 快速部署：
+
+```bash
+# 1. 克隆仓库
+git clone <repository-url>
+cd video-transcript-api
+
+# 2. 准备配置文件
+cp config/config.example.jsonc config/config.jsonc
+# 编辑 config/config.jsonc，填写必要配置
+
+# 3. 启动服务
+cd docker/
+docker compose up -d
+
+# 4. 查看日志
+docker compose logs -f
+
+# 5. 停止服务
+docker compose down
+```
+
+**Docker 镜像**：[`zj1123581321/video-transcript-api`](https://hub.docker.com/r/zj1123581321/video-transcript-api)
+
+**镜像内置工具**：ffmpeg、BBDown、yt-dlp，无需额外安装。
+
+**注意事项**：
+- CapsWriter / FunASR 需要单独部署，配置文件中的服务地址不能使用 `localhost`，需改为宿主机 IP 或 `host.docker.internal`
+- `data/` 和 `config/` 目录通过 bind mount 映射到宿主机，数据持久保存
+
 ### 基本使用
 
 ```bash

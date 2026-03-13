@@ -1,0 +1,14 @@
+services:
+  video-transcript-api:
+    image: zj1123581321/video-transcript-api:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      # Configuration files (user must prepare before starting)
+      - ../config:/app/config
+      # Persistent data: cache, logs, transcription results
+      - ../data:/app/data
+    restart: unless-stopped
