@@ -52,23 +52,26 @@ class KeyInfo:
         )
 
     def format_for_prompt(self) -> str:
-        """格式化为 prompt 可用的文本"""
+        """格式化为 prompt 可用的文本
+
+        输出格式强调这些是"正确拼写"，引导 LLM 主动在转录文本中寻找并纠正 ASR 误识别。
+        """
         parts = []
 
         if self.names:
-            parts.append(f"人名: {', '.join(self.names)}")
+            parts.append(f"- 人名（正确写法）: {', '.join(self.names)}")
         if self.places:
-            parts.append(f"地名: {', '.join(self.places)}")
+            parts.append(f"- 地名（正确写法）: {', '.join(self.places)}")
         if self.technical_terms:
-            parts.append(f"技术术语: {', '.join(self.technical_terms)}")
+            parts.append(f"- 技术术语（正确写法）: {', '.join(self.technical_terms)}")
         if self.brands:
-            parts.append(f"品牌/产品: {', '.join(self.brands)}")
+            parts.append(f"- 品牌/产品（正确写法）: {', '.join(self.brands)}")
         if self.abbreviations:
-            parts.append(f"缩写: {', '.join(self.abbreviations)}")
+            parts.append(f"- 缩写（正确写法）: {', '.join(self.abbreviations)}")
         if self.foreign_terms:
-            parts.append(f"外文术语: {', '.join(self.foreign_terms)}")
+            parts.append(f"- 外文术语（正确写法）: {', '.join(self.foreign_terms)}")
         if self.other_entities:
-            parts.append(f"其他: {', '.join(self.other_entities)}")
+            parts.append(f"- 其他实体（正确写法）: {', '.join(self.other_entities)}")
 
         return "\n".join(parts) if parts else "无特殊关键信息"
 
