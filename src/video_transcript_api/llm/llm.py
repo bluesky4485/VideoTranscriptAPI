@@ -20,6 +20,16 @@ from loguru import logger
 
 _default_config: Optional[Dict[str, Any]] = None
 
+# 默认 API 请求超时（秒）
+DEFAULT_LLM_TIMEOUT = 360
+
+
+def _get_llm_timeout() -> int:
+    """从默认配置中获取 LLM API 请求超时时间（秒）"""
+    if _default_config is not None:
+        return _default_config.get('llm', {}).get('timeout', DEFAULT_LLM_TIMEOUT)
+    return DEFAULT_LLM_TIMEOUT
+
 
 def set_default_config(config: Dict[str, Any]) -> None:
     """
@@ -309,7 +319,7 @@ def _call_with_text_output(
                 f"Attempt {attempt + 1}/{max_retries + 1}"
             )
 
-            resp = requests.post(base_url, json=data, headers=headers, timeout=360)
+            resp = requests.post(base_url, json=data, headers=headers, timeout=_get_llm_timeout())
             resp.raise_for_status()
             result = resp.json()
 
@@ -399,7 +409,7 @@ def _call_with_json_schema_mode(
         try:
             logger.info(f"[{task_type.upper()}] json_schema mode | Attempt {attempt + 1}/{max_retries + 1}")
 
-            resp = requests.post(base_url, json=data, headers=headers, timeout=360)
+            resp = requests.post(base_url, json=data, headers=headers, timeout=_get_llm_timeout())
             resp.raise_for_status()
             result = resp.json()
 
@@ -494,7 +504,7 @@ def _call_with_json_object_mode(
 
             logger.info(f"[{task_type.upper()}] json_object mode | Attempt {attempt + 1}/{json_object_retries + 1}")
 
-            resp = requests.post(base_url, json=data, headers=headers, timeout=360)
+            resp = requests.post(base_url, json=data, headers=headers, timeout=_get_llm_timeout())
             resp.raise_for_status()
             result = resp.json()
 
