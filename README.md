@@ -8,6 +8,8 @@
 
 开发契机和玩法分享：[LLM 吞噬一切，我用 AI 长出来的那些工具](https://mp.weixin.qq.com/s/w8VnWJcUp5VkD5J-fYCUrg)
 
+![转录结果页面](docs/images/overview.jpg)
+
 ---
 
 ## 核心特性
