@@ -9,7 +9,7 @@ from ..utils.notifications import init_global_notifier, shutdown_global_notifier
 from ..utils.ytdlp import YtdlpConfigBuilder
 from ..llm import set_default_config, log_llm_stats
 from .context import get_config, get_logger, get_static_dir, get_temp_manager
-from .routes import audit, tasks, users, views
+from .routes import audit, health, tasks, users, views
 from .services.transcription import process_llm_queue, process_task_queue
 
 
@@ -59,6 +59,7 @@ def create_app() -> FastAPI:
             return response
         return await call_next(request)
 
+    app.include_router(health.router)
     app.include_router(tasks.router)
     app.include_router(audit.router)
     app.include_router(users.router)
@@ -103,6 +104,16 @@ def create_app() -> FastAPI:
                 logger.exception("风控模块初始化失败: %s", exc)
                 logger.warning("风控模块将被禁用")
 
+        # 启动 ASR 服务监控
+        try:
+            from ..utils.asr_monitor import start_asr_monitor
+            asr_monitor = start_asr_monitor(config)
+            if asr_monitor:
+                app.state.asr_monitor = asr_monitor
+                logger.info("ASR 服务监控已启动")
+        except Exception as exc:
+            logger.warning(f"ASR 监控启动失败: {exc}")
+
         logger.info("API服务已启动")
 
     @app.on_event("shutdown")
@@ -111,6 +122,10 @@ def create_app() -> FastAPI:
         temp_manager.clean_up()
 
         log_llm_stats()
+
+        # 停止 ASR 监控
+        if hasattr(app.state, "asr_monitor") and app.state.asr_monitor:
+            app.state.asr_monitor.stop()
 
         shutdown_global_notifier()
         logger.info("API服务已关闭")

@@ -6,30 +6,25 @@ import time
 from typing import Optional, Dict, Any
 
 from fastapi import HTTPException, Header, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from ..context import (
     get_audit_logger,
     get_cache_manager,
     get_config,
     get_executor,
-    get_llm_coordinator,
-    get_llm_executor,
     get_llm_queue,
     get_logger,
     get_task_queue,
     get_task_results,
     get_temp_manager,
     get_user_manager,
-    task_lock,
 )
 from ...downloaders import create_downloader
 from ...transcriber import FunASRSpeakerClient, Transcriber
-from ...llm import call_llm_api
 from ...utils.notifications import (
     WechatNotifier,
     send_long_text_wechat,
-    format_llm_config_markdown,
 )
 from ...utils.rendering import get_base_url
 
@@ -38,20 +33,17 @@ config = get_config()
 user_manager = get_user_manager()
 audit_logger = get_audit_logger()
 cache_manager = get_cache_manager()
-# 使用新架构
-llm_coordinator = get_llm_coordinator()
 task_results = get_task_results()
 task_queue = get_task_queue()
 llm_task_queue = get_llm_queue()
-llm_executor = get_llm_executor()
 executor = get_executor()
 
 
 class MetadataOverride(BaseModel):
     """元数据覆盖模型"""
-    title: Optional[str] = Field(None, description="视频标题")
-    description: Optional[str] = Field(None, description="视频描述")
-    author: Optional[str] = Field(None, description="视频作者")
+    title: Optional[str] = Field(None, description="视频标题", max_length=200)
+    description: Optional[str] = Field(None, description="视频描述", max_length=2000)
+    author: Optional[str] = Field(None, description="视频作者", max_length=200)
 
 
 class TranscribeRequest(BaseModel):
@@ -69,6 +61,19 @@ class TranscribeRequest(BaseModel):
         None, description="元数据覆盖（用于补充或覆盖解析的元数据）"
     )
 
+    @field_validator("wechat_webhook")
+    @classmethod
+    def validate_webhook_url(cls, v):
+        """验证 webhook URL 安全性（防止 SSRF）"""
+        if v is None or v.strip() == "":
+            return v
+        from ...utils.url_validator import validate_url_safe, URLValidationError
+        try:
+            validate_url_safe(v)
+        except URLValidationError as e:
+            raise ValueError(f"webhook URL is not allowed: {e}")
+        return v
+
 
 class RecalibrateRequest(BaseModel):
     """重新校对请求数据模型"""
@@ -77,6 +82,19 @@ class RecalibrateRequest(BaseModel):
     wechat_webhook: Optional[str] = Field(
         None, description="企业微信webhook地址，用于发送通知"
     )
+
+    @field_validator("wechat_webhook")
+    @classmethod
+    def validate_webhook_url(cls, v):
+        """验证 webhook URL 安全性（防止 SSRF）"""
+        if v is None or v.strip() == "":
+            return v
+        from ...utils.url_validator import validate_url_safe, URLValidationError
+        try:
+            validate_url_safe(v)
+        except URLValidationError as e:
+            raise ValueError(f"webhook URL is not allowed: {e}")
+        return v
 
 
 class TranscribeResponse(BaseModel):
@@ -1239,420 +1257,12 @@ def process_transcription(
 
 
 def process_llm_queue():
-    """处理LLM队列的后台任务"""
-    logger.info("启动LLM队列处理器")
-
-    while True:
-        try:
-            llm_task = llm_task_queue.get()
-            try:
-                logger.info(
-                    f"LLM任务出队: {llm_task.get('task_id')}，"
-                    f"提交到线程池（当前队列任务完成数: {getattr(llm_task_queue, 'completed', '未知')}）"
-                )
-                llm_executor.submit(_handle_llm_task, llm_task)
-            except Exception as exc:
-                logger.exception(f"提交LLM任务失败: {exc}")
-                llm_task_queue.task_done()
-        except Exception as exc:
-            logger.exception(f"LLM队列处理器异常: {exc}")
-            import time
-
-            time.sleep(1)
+    """处理LLM队列的后台任务（委托给 llm_ops 模块）"""
+    from .llm_ops import process_llm_queue as _process_llm_queue
+    _process_llm_queue()
 
 
 def _handle_llm_task(llm_task: dict):
-    """Worker entry for processing a single LLM task."""
-    task_id = llm_task.get("task_id")
-
-    try:
-        with task_lock(task_id):
-            url = llm_task["url"]
-            # 优先使用 display_url 用于通知显示
-            display_url = llm_task.get("display_url", url)
-            platform = llm_task.get("platform")
-            media_id = llm_task.get("media_id")
-            video_title = llm_task["video_title"]
-            transcript = llm_task["transcript"]
-            use_speaker_recognition = llm_task.get("use_speaker_recognition", False)
-            wechat_webhook = llm_task.get("wechat_webhook")
-
-            task_notifier = (
-                WechatNotifier(wechat_webhook) if wechat_webhook else WechatNotifier()
-            )
-            logger.info(f"开始处理LLM任务: {task_id}, 标题: {video_title}")
-
-            try:
-                if video_title == "":
-                    is_generic = llm_task.get("is_generic", False)
-                    if is_generic:
-                        logger.info("通用下载器文件没有标题，使用LLM生成")
-                        title_prompt = (
-                            "请根据以下音视频转录文本，生成一个简洁的标题（不超过20个字）。\n"
-                            "只返回标题文本，不要有任何其他说明或标点符号。\n"
-                            "如果无法从内容中提取有意义的标题，请返回'自定义文件总结'。\n\n"
-                            "转录文本：\n" + transcript[:1000]
-                        )
-
-                        try:
-                            config_llm = config.get("llm", {})
-                            api_key = config_llm.get("api_key")
-                            base_url = config_llm.get("base_url")
-                            summary_model = config_llm.get("summary_model")
-                            max_retries = config_llm.get("max_retries", 2)
-                            retry_delay = config_llm.get("retry_delay", 5)
-                            generated_title = call_llm_api(
-                                summary_model,
-                                title_prompt,
-                                api_key,
-                                base_url,
-                                max_retries,
-                                retry_delay,
-                            )
-
-                            generated_title = (
-                                generated_title.strip()
-                                .strip('"')
-                                .strip("'")
-                                .strip("。")
-                                .strip("，")
-                            )
-                            if generated_title and len(generated_title) <= 30:
-                                video_title = generated_title
-                                logger.info(f"LLM生成的标题: {video_title}")
-                            else:
-                                video_title = "自定义文件总结"
-                                logger.warning("LLM生成的标题不合规，使用默认标题")
-                        except Exception as exc:
-                            logger.error(f"LLM生成标题失败: {exc}")
-                            video_title = "自定义文件总结"
-
-                llm_task["video_title"] = video_title
-
-                # 使用新 LLM 协调器处理任务
-                logger.info(f"开始使用 LLM 协调器处理任务: {task_id}")
-
-                # 准备新架构的参数
-                if use_speaker_recognition and llm_task.get("transcription_data"):
-                    # 有说话人识别：提取 segments 字段（对话列表）
-                    transcription_data = llm_task.get("transcription_data")
-                    if isinstance(transcription_data, dict):
-                        # 如果是字典，提取 segments
-                        content = transcription_data.get("segments", [])
-                    elif isinstance(transcription_data, list):
-                        # 如果已经是列表，直接使用
-                        content = transcription_data
-                    else:
-                        # 降级到格式化文本
-                        logger.warning(
-                            f"Unexpected transcription_data type: {type(transcription_data)}, "
-                            f"falling back to formatted text"
-                        )
-                        content = transcript
-                else:
-                    # 无说话人识别：使用纯文本
-                    content = transcript
-
-                # 检测风险内容（用于模型选择）
-                has_risk = False
-                try:
-                    from ...risk_control import is_enabled, sanitize_text
-
-                    if is_enabled():
-                        # 合并元数据用于风险检测
-                        metadata_text = " ".join(
-                            [
-                                llm_task.get("video_title", ""),
-                                llm_task.get("author", ""),
-                                llm_task.get("description", ""),
-                            ]
-                        ).strip()
-
-                        if metadata_text:
-                            # 使用 general 类型检测敏感词（不脱敏，仅检测）
-                            risk_result = sanitize_text(metadata_text, text_type="general")
-                            if risk_result["has_sensitive"]:
-                                has_risk = True
-                                logger.warning(
-                                    f"[风控] 检测到 {len(risk_result['sensitive_words'])} 个敏感词，将切换到风险模型: "
-                                    f"{risk_result['sensitive_words'][:5]}"  # 最多显示前5个
-                                )
-                except Exception as e:
-                    logger.error(f"风险检测失败，使用默认模型: {e}")
-
-                # 是否为仅校对模式（重新校对场景）
-                calibrate_only = llm_task.get("calibrate_only", False)
-
-                # 调用新架构
-                coordinator_result = llm_coordinator.process(
-                    content=content,
-                    title=video_title,
-                    author=llm_task.get("author", ""),
-                    description=llm_task.get("description", ""),
-                    platform=platform or "",
-                    media_id=media_id or "",
-                    has_risk=has_risk,  # 传递风险检测结果
-                    skip_summary=calibrate_only,  # 仅校对时跳过总结
-                )
-
-                # 适配返回格式为旧架构格式（保持后续代码兼容）
-                calibrated_text_new = coordinator_result.get("calibrated_text", "")
-                summary_text_new = coordinator_result.get("summary_text")  # 从新架构获取总结
-
-                # 判断是否跳过总结（基于新架构返回的 summary_text）
-                # calibrate_only 模式下保留原有总结，不覆盖
-                should_skip_summary = summary_text_new is None
-
-                result_dict = {
-                    "校对文本": calibrated_text_new,
-                    "内容总结": summary_text_new,  # 使用新架构返回的总结
-                    "skip_summary": should_skip_summary,
-                    "stats": coordinator_result.get("stats", {}),
-                    "models_used": coordinator_result.get("models_used", {}),
-                    "calibrate_success": True,
-                    "summary_success": summary_text_new is not None,  # 根据总结是否存在判断
-                }
-
-                # 如果是对话场景，保存结构化数据
-                if "structured_data" in coordinator_result:
-                    result_dict["structured_data"] = coordinator_result["structured_data"]
-
-                logger.info(f"LLM处理完成，开始保存结果和发送微信通知: {task_id}")
-
-                # 提取结果和统计信息
-                calibrated_text = result_dict.get("校对文本", "")
-                summary_text = result_dict.get("内容总结")
-                skip_summary = result_dict.get("skip_summary", False)
-                stats = result_dict.get("stats", {})
-                models_used = result_dict.get("models_used", {})
-
-                # 提取成功标记（B1方案：失败时不写文件）
-                calibrate_success = result_dict.get("calibrate_success", True)
-                summary_success = result_dict.get("summary_success", True)
-
-                # 保存 LLM 模型配置到数据库
-                if models_used:
-                    cache_manager.update_task_llm_config(task_id, models_used)
-                    logger.info(
-                        f"LLM模型配置已保存: {task_id}, risk_detected={models_used.get('has_risk', False)}"
-                    )
-
-                # 保存校对文本到缓存（仅在成功时保存）
-                if platform and media_id:
-                    if calibrate_success:
-                        cache_manager.save_llm_result(
-                            platform=platform,
-                            media_id=media_id,
-                            use_speaker_recognition=use_speaker_recognition,
-                            llm_type="calibrated",
-                            content=calibrated_text,
-                        )
-                        logger.info(f"校对文本已保存到缓存: {task_id}")
-                    else:
-                        logger.warning(f"校对失败，跳过保存校对文件: {task_id}")
-
-                    # 保存总结文本到缓存（仅在成功时保存）
-                    # calibrate_only 模式下保留原有总结文件，不覆盖
-                    if calibrate_only:
-                        logger.info(f"仅校对模式，保留原有总结文件: {task_id}")
-                    elif summary_success:
-                        if skip_summary:
-                            # 跳过总结时，只有校对成功才保存
-                            if calibrate_success:
-                                summary_content = calibrated_text
-                                logger.info(f"文本过短，保存校对文本作为总结: {task_id}")
-                                cache_manager.save_llm_result(
-                                    platform=platform,
-                                    media_id=media_id,
-                                    use_speaker_recognition=use_speaker_recognition,
-                                    llm_type="summary",
-                                    content=summary_content,
-                                )
-                        else:
-                            # 使用新架构生成的总结
-                            if summary_text is not None:
-                                summary_content = summary_text
-                                logger.info(f"保存LLM总结到缓存: {task_id}")
-                                cache_manager.save_llm_result(
-                                    platform=platform,
-                                    media_id=media_id,
-                                    use_speaker_recognition=use_speaker_recognition,
-                                    llm_type="summary",
-                                    content=summary_content,
-                                )
-                            else:
-                                # 总结生成失败，跳过保存
-                                logger.warning(f"总结生成失败，跳过保存: {task_id}")
-                    else:
-                        logger.warning(f"总结失败，跳过保存总结文件: {task_id}")
-
-                    # 保存结构化数据到缓存（仅在有说话人识别且校对成功时保存）
-                    if use_speaker_recognition and calibrate_success and "structured_data" in result_dict:
-                        structured_data = result_dict["structured_data"]
-                        # 将校准统计写入结构化数据，供前端页面读取
-                        cal_stats_for_save = stats.get("calibration_stats")
-                        if cal_stats_for_save:
-                            structured_data["calibration_stats"] = cal_stats_for_save
-                        save_structured_success = cache_manager.save_llm_result(
-                            platform=platform,
-                            media_id=media_id,
-                            use_speaker_recognition=use_speaker_recognition,
-                            llm_type="structured",
-                            content=structured_data,
-                        )
-                        if save_structured_success:
-                            logger.info(f"结构化数据已保存到缓存: {platform}/{media_id}/llm_processed.json")
-                        else:
-                            logger.warning(f"结构化数据保存失败: {task_id}")
-
-                    if calibrate_success or summary_success:
-                        logger.info(f"LLM结果已保存到缓存: {platform}/{media_id}")
-                    else:
-                        logger.warning(f"LLM处理全部失败，未保存任何结果文件: {task_id}")
-
-                # 重新校对模式跳过企微通知（用户在页面上等待，无需推送）
-                if calibrate_only:
-                    logger.info(f"仅校对模式，跳过企微通知: {task_id}")
-                else:
-                    # 获取查看链接
-                    task_info = cache_manager.get_task_by_id(task_id)
-                    view_url = ""
-                    if task_info and task_info.get("view_token"):
-                        base_url = get_base_url()
-                        view_url = f"{base_url}/view/{task_info['view_token']}"
-
-                    # 构建统计信息文本
-                    original_length = stats.get("original_length", 0)
-                    calibrated_length = stats.get("calibrated_length", 0)
-                    summary_length = stats.get("summary_length", 0)
-
-                    # 校准质量警告
-                    calibration_warning = ""
-                    cal_stats = stats.get("calibration_stats")
-                    if cal_stats:
-                        failed = cal_stats.get("failed_count", 0)
-                        fallback = cal_stats.get("fallback_count", 0)
-                        total = cal_stats.get("total_chunks", 0)
-                        success = cal_stats.get("success_count", 0)
-                        if failed == total and total > 0:
-                            calibration_warning = (
-                                "\n⚠️ **校准完全失败**：LLM API 超时，"
-                                "当前显示为未校准的原始语音识别文本，质量较低。"
-                                "建议稍后重新提交。"
-                            )
-                        elif failed > 0 or fallback > 0:
-                            calibration_warning = (
-                                f"\n⚠️ **校准部分异常**：{success}/{total} 段校准成功，"
-                                f"{fallback} 段降级，{failed} 段失败。"
-                                "部分内容为未校准文本。"
-                            )
-
-                    # 构建完整的消息格式
-                    speaker_info = "（含说话人识别）" if use_speaker_recognition else ""
-
-                    # 格式化模型配置信息
-                    model_config_text = format_llm_config_markdown(models_used)
-
-                    if skip_summary:
-                        full_message = f"""## 总结和校对
-🌐 网页查看：{view_url}
-📄 直接获取：{view_url}?raw=calibrated
-
-## 转录统计
-原始 {original_length:,} 字 | 校对 {calibrated_length:,} 字 | 总结 未生成{calibration_warning}
-
-{model_config_text}
-
-## 校对文本{speaker_info}
-{calibrated_text}"""
-                        logger.info(f"发送校对文本（文本过短，未总结）: {task_id}")
-                    else:
-                        full_message = f"""## 总结和校对
-🌐 网页查看：{view_url}
-📄 直接获取：{view_url}?raw=calibrated
-
-## 转录统计
-原始 {original_length:,} 字 | 校对 {calibrated_length:,} 字 | 总结 {summary_length:,} 字{calibration_warning}
-
-{model_config_text}
-
-## 总结{speaker_info}
-{summary_text}"""
-                        logger.info(f"发送总结文本: {task_id}")
-
-                    send_long_text_wechat(
-                        title=video_title,
-                        url=display_url,
-                        text=full_message,
-                        is_summary=not skip_summary,
-                        has_speaker_recognition=use_speaker_recognition,
-                        webhook=wechat_webhook,
-                        skip_content_type_header=True,
-                    )
-
-                    import time
-
-                    time.sleep(0.1)  # 100ms延迟，确保总结文本已加入队列
-
-                    task_info = cache_manager.get_task_by_id(task_id)
-                    if task_info and task_info.get("view_token"):
-                        base_url = get_base_url()
-                        view_url = f"{base_url}/view/{task_info['view_token']}"
-
-                        clean_url = WechatNotifier()._clean_url(display_url)
-
-                        sanitized_title = video_title
-                        try:
-                            from ...risk_control import is_enabled, sanitize_text
-
-                            if is_enabled():
-                                title_result = sanitize_text(video_title, text_type="title")
-                                if title_result["has_sensitive"]:
-                                    logger.info(
-                                        f"[风控] 完成通知标题包含 {len(title_result['sensitive_words'])} 个敏感词，已处理"
-                                    )
-                                    sanitized_title = title_result["sanitized_text"]
-                        except Exception as risk_exc:
-                            logger.exception(f"完成通知标题风控处理失败: {risk_exc}")
-
-                        completion_message = f"# {sanitized_title}\n\n{clean_url}\n\n🔗 总结和校对：\n{view_url}\n\n✅ **【任务完成】**"
-                        task_notifier = WechatNotifier(wechat_webhook)
-                        task_notifier.send_text(completion_message, skip_risk_control=True)
-                        logger.info(f"任务完成通知已加入限流队列: {task_id}")
-
-                logger.info(f"LLM任务处理完成: {task_id}, 标题: {video_title}")
-
-                # calibrate_only 模式：LLM 处理完成后需要更新任务状态为 success
-                # （正常流程中 task_status 在 process_transcription 中已更新）
-                if calibrate_only and platform and media_id:
-                    cache_manager.update_task_status(
-                        task_id,
-                        "success",
-                        platform=platform,
-                        media_id=media_id,
-                        title=video_title,
-                        author=llm_task.get("author", ""),
-                    )
-                    # 同步更新内存中的任务状态（供 GET /api/task/{task_id} 轮询）
-                    task_results[task_id] = {
-                        "status": "success",
-                        "message": "重新校对完成",
-                    }
-                    logger.info(f"重新校对任务状态已更新为 success: {task_id}")
-            except Exception as exc:
-                logger.exception(f"LLM任务处理异常: {task_id}, 错误: {exc}")
-                task_notifier.send_text(f"【LLM API调用异常】{exc}")
-
-                # calibrate_only 模式：异常时也要更新任务状态
-                if llm_task.get("calibrate_only"):
-                    try:
-                        cache_manager.update_task_status(task_id, "failed")
-                        task_results[task_id] = {
-                            "status": "failed",
-                            "message": f"重新校对失败: {exc}",
-                        }
-                        logger.info(f"重新校对任务状态已更新为 failed: {task_id}")
-                    except Exception:
-                        pass
-    finally:
-        llm_task_queue.task_done()
+    """Worker entry for processing a single LLM task（委托给 llm_ops 模块）"""
+    from .llm_ops import _handle_llm_task as _handle
+    _handle(llm_task)

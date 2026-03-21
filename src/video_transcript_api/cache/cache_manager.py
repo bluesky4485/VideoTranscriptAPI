@@ -46,6 +46,11 @@ class CacheManager:
         if not hasattr(self._local, 'connection'):
             self._local.connection = sqlite3.connect(str(self.db_path))
             self._local.connection.row_factory = sqlite3.Row
+            # 启用 WAL 模式提升并发读写性能
+            try:
+                self._local.connection.execute("PRAGMA journal_mode=WAL")
+            except sqlite3.OperationalError:
+                logger.warning("WAL mode not supported, using default journal mode")
         return self._local.connection
         
     @contextmanager

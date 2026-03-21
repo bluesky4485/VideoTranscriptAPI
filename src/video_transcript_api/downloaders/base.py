@@ -7,6 +7,12 @@ from abc import ABC, abstractmethod
 from typing import Dict, Optional
 from urllib.parse import urlparse, parse_qs
 from .models import VideoMetadata, DownloadInfo
+from ..errors import (
+    DownloadFailedError,
+    DownloadTimeoutError,
+    InvalidMediaError,
+    NetworkError,
+)
 from ..utils.logging import setup_logger, load_config, ensure_dir
 
 logger = setup_logger("downloaders")
@@ -190,85 +196,100 @@ class BaseDownloader(ABC):
             logger.error(f"解析短链接失败: {url}, 错误: {str(e)}")
             return url
 
-    def download_file(self, url, filename):
-        """Download file to local temp directory and track it."""
-        try:
-            logger.info(f"开始下载文件: {url[:100]}...")
+    def download_file(self, url, filename, max_retries: int = 3):
+        """Download file to local temp directory with retry logic.
 
-            response = requests.get(url, stream=True, timeout=60)
-            response.raise_for_status()
+        Args:
+            url: File download URL
+            filename: Target filename (used for extension detection)
+            max_retries: Maximum retry attempts for retryable errors
 
-            content_length = response.headers.get("Content-Length")
-            expected_size = int(content_length) if content_length else None
-            if expected_size:
-                logger.info(f"预期文件大小: {expected_size / 1024 / 1024:.2f} MB")
+        Returns:
+            str: Local file path on success, None on failure
+        """
+        last_error = None
 
-            downloaded_size = 0
-            ext = os.path.splitext(filename)[1] if "." in filename else ".tmp"
-            local_path = self.temp_manager.create_temp_file(suffix=ext)
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.info(f"downloading file (attempt {attempt}/{max_retries}): {url[:100]}...")
 
-            with open(local_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded_size += len(chunk)
+                response = requests.get(url, stream=True, timeout=60)
+                response.raise_for_status()
 
-            actual_size = os.path.getsize(local_path)
-            logger.info(f"实际下载文件大小: {actual_size / 1024 / 1024:.2f} MB")
+                content_length = response.headers.get("Content-Length")
+                expected_size = int(content_length) if content_length else None
+                if expected_size:
+                    logger.info(f"expected file size: {expected_size / 1024 / 1024:.2f} MB")
 
-            if actual_size == 0:
-                logger.error(f"下载的文件大小为0字节: {local_path}")
-                self.temp_manager.clean_up()
+                ext = os.path.splitext(filename)[1] if "." in filename else ".tmp"
+                local_path = self.temp_manager.create_temp_file(suffix=ext)
+
+                downloaded_size = 0
+                with open(local_path, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded_size += len(chunk)
+
+                actual_size = os.path.getsize(local_path)
+                logger.info(f"actual file size: {actual_size / 1024 / 1024:.2f} MB")
+
+                if actual_size == 0:
+                    self.temp_manager.clean_up()
+                    raise DownloadFailedError(f"downloaded file is 0 bytes: {local_path}")
+
+                if expected_size and abs(actual_size - expected_size) > 1024:
+                    logger.warning(
+                        f"file size mismatch - expected: {expected_size}, actual: {actual_size}"
+                    )
+
+                if not self._validate_media_file(local_path):
+                    self.temp_manager.clean_up()
+                    raise InvalidMediaError(f"downloaded file is not valid media: {local_path}")
+
+                logger.info(f"file downloaded and validated: {local_path}")
+                return str(local_path)
+
+            except InvalidMediaError:
+                # Invalid media is not retryable
+                logger.error(f"invalid media file, not retrying: {url}")
                 return None
 
-            if expected_size and abs(actual_size - expected_size) > 1024:
-                logger.warning(
-                    f"文件大小不匹配 - 预期: {expected_size}, 实际: {actual_size}"
-                )
+            except requests.exceptions.HTTPError as e:
+                status = e.response.status_code if e.response is not None else None
+                if status == 403:
+                    logger.error(f"HTTP 403 Forbidden, not retrying: {url}")
+                    return None
+                last_error = NetworkError(f"HTTP {status}: {e}")
 
-            if not self._validate_media_file(local_path):
-                logger.error(f"下载的文件不是有效的音视频文件: {local_path}")
-                self.temp_manager.clean_up()
-                return None
+            except requests.exceptions.Timeout as e:
+                last_error = DownloadTimeoutError(f"download timed out: {e}")
 
-            logger.info(f"文件下载并验证成功: {local_path}")
-            return str(local_path)
+            except requests.exceptions.ConnectionError as e:
+                last_error = NetworkError(f"connection error: {e}")
 
-        except Exception as e:
-            logger.error(f"文件下载失败: {url}, 错误: {str(e)}")
+            except DownloadFailedError as e:
+                last_error = e
+
+            except Exception as e:
+                last_error = DownloadFailedError(f"unexpected error: {e}")
+
+            # Clean up on retry
             try:
                 if "local_path" in locals() and os.path.exists(local_path):
                     self.temp_manager.clean_up()
-            except:
+            except Exception:
                 pass
-            return None
 
-            # 如果有预期大小，检查是否匹配
-            if (
-                expected_size and abs(actual_size - expected_size) > 1024
-            ):  # 允许1KB的误差
+            if attempt < max_retries:
+                wait = 2 ** (attempt - 1)
                 logger.warning(
-                    f"文件大小不匹配 - 预期: {expected_size}, 实际: {actual_size}"
+                    f"download attempt {attempt} failed: {last_error}, retrying in {wait}s"
                 )
+                time.sleep(wait)
 
-            # 验证文件是否为有效的音视频文件
-            if not self._validate_media_file(local_path):
-                logger.error(f"下载的文件不是有效的音视频文件: {local_path}")
-                self.clean_up(local_path)
-                return None
-
-            logger.info(f"文件下载并验证成功: {local_path}")
-            return local_path
-
-        except Exception as e:
-            logger.error(f"文件下载失败: {url}, 错误: {str(e)}")
-            # 清理可能存在的不完整文件
-            try:
-                if "local_path" in locals() and os.path.exists(local_path):
-                    self.clean_up(local_path)
-            except:
-                pass
-            return None
+        logger.error(f"download failed after {max_retries} attempts: {url}, error: {last_error}")
+        return None
 
     def _validate_media_file(self, file_path):
         """

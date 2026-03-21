@@ -150,6 +150,19 @@ class PlainTextProcessor:
         # 格式化关键信息
         key_info_text = key_info.format_for_prompt()
 
+        # 注入专有名词库匹配结果
+        try:
+            from ...terminology import get_terminology_db
+            term_db = get_terminology_db()
+            # 从标题、描述和前1000字转录文本中匹配专有名词
+            sample_text = f"{title} {description} {' '.join(s[:200] for s in segments[:5])}"
+            term_prompt = term_db.format_matched_for_prompt(sample_text)
+            if term_prompt:
+                key_info_text += f"\n- 专有名词对照表（请使用正确写法）:\n{term_prompt}"
+                logger.debug(f"Injected terminology corrections into prompt")
+        except Exception as e:
+            logger.warning(f"Failed to load terminology DB: {e}")
+
         # 根据语言选择 system prompt
         system_prompt = CALIBRATE_SYSTEM_PROMPT_EN if language == "en" else CALIBRATE_SYSTEM_PROMPT
 
