@@ -6,11 +6,20 @@ Test coverage:
 - get_video_info() caching behavior
 - _get_subtitle_with_tikhub_api() cache reuse
 - Cache isolation between instances
+
+All console output must be in English only (no emoji, no Chinese).
 """
 
+import os
 import pytest
 from unittest.mock import patch, Mock, MagicMock
-from src.video_transcript_api.downloaders.youtube import YoutubeDownloader
+from video_transcript_api.downloaders.youtube import YoutubeDownloader
+
+
+@pytest.fixture(autouse=True)
+def ensure_debug_dir():
+    """Ensure debug directory exists for youtube downloader debug logging."""
+    os.makedirs("./data/logs/debug", exist_ok=True)
 
 
 class TestYoutubeDownloaderCache:
@@ -38,8 +47,8 @@ class TestYoutubeDownloaderCache:
     def downloader(self, mock_config):
         """Create a YouTube downloader instance with mocked dependencies"""
         # Mock load_config at the base downloader level
-        with patch('src.video_transcript_api.downloaders.base.load_config', return_value=mock_config):
-            with patch('src.video_transcript_api.downloaders.base.get_temp_manager'):
+        with patch('video_transcript_api.downloaders.base.load_config', return_value=mock_config):
+            with patch('video_transcript_api.downloaders.base.get_temp_manager'):
                 downloader = YoutubeDownloader()
                 return downloader
 
@@ -187,8 +196,8 @@ class TestYoutubeDownloaderCache:
 
     def test_cache_isolation_between_instances(self, mock_config):
         """Test that cache is isolated between different instances"""
-        with patch('src.video_transcript_api.downloaders.base.load_config', return_value=mock_config):
-            with patch('src.video_transcript_api.downloaders.base.get_temp_manager'):
+        with patch('video_transcript_api.downloaders.base.load_config', return_value=mock_config):
+            with patch('video_transcript_api.downloaders.base.get_temp_manager'):
                 downloader1 = YoutubeDownloader()
                 downloader2 = YoutubeDownloader()
 
@@ -208,8 +217,8 @@ class TestYoutubeDownloaderCache:
 
     def test_cache_lifecycle(self, mock_config):
         """Test cache lifecycle (created with instance, destroyed with instance)"""
-        with patch('src.video_transcript_api.downloaders.base.load_config', return_value=mock_config):
-            with patch('src.video_transcript_api.downloaders.base.get_temp_manager'):
+        with patch('video_transcript_api.downloaders.base.load_config', return_value=mock_config):
+            with patch('video_transcript_api.downloaders.base.get_temp_manager'):
                 downloader = YoutubeDownloader()
 
                 # Populate cache

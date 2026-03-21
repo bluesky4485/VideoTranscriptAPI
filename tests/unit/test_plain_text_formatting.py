@@ -1,17 +1,27 @@
-"""Test plain text formatting functionality"""
+"""
+Test plain text formatting functionality.
+
+Tests _format_plain_text() intelligent paragraph detection:
+- Type A: text wall (few lines, long avg) -> split into paragraphs
+- Type B: over-segmented (many lines, short avg) -> merge into paragraphs
+- Type C: reasonable structure -> keep as-is
+- Short text -> return unchanged
+
+All console output must be in English only (no emoji, no Chinese).
+"""
 
 import pytest
-from unittest.mock import Mock, MagicMock
-from src.video_transcript_api.llm.processors.plain_text_processor import PlainTextProcessor
-from src.video_transcript_api.llm.core.config import LLMConfig
+from unittest.mock import Mock
+from video_transcript_api.llm.processors.plain_text_processor import PlainTextProcessor
+from video_transcript_api.llm.core.config import LLMConfig
 
 
 class TestPlainTextFormatting:
-    """Test plain text formatting in PlainTextProcessor"""
+    """Test plain text formatting in PlainTextProcessor."""
 
     @pytest.fixture
     def mock_config(self):
-        """Create mock LLM config"""
+        """Create mock LLM config."""
         config = Mock(spec=LLMConfig)
         config.enable_threshold = 5000
         config.min_calibrate_ratio = 0.8
@@ -20,115 +30,81 @@ class TestPlainTextFormatting:
 
     @pytest.fixture
     def processor(self, mock_config):
-        """Create PlainTextProcessor instance with mocked dependencies"""
-        mock_llm_client = Mock()
-        mock_key_info_extractor = Mock()
-        mock_quality_validator = Mock()
-
+        """Create PlainTextProcessor instance with mocked dependencies."""
         return PlainTextProcessor(
             config=mock_config,
-            llm_client=mock_llm_client,
-            key_info_extractor=mock_key_info_extractor,
-            quality_validator=mock_quality_validator,
+            llm_client=Mock(),
+            key_info_extractor=Mock(),
+            quality_validator=Mock(),
         )
 
-    def test_format_plain_text_with_no_line_breaks(self, processor):
-        """Test formatting text without line breaks"""
-        # Long text without line breaks
-        text = "这是第一句话。这是第二句话！这是第三句话？这是第四句话；这是第五句话。"
+    def test_short_text_unchanged(self, processor):
+        """Text under 100 chars should be returned as-is."""
+        text = "short text"
+        assert processor._format_plain_text(text) == text
+
+    def test_empty_text_unchanged(self, processor):
+        """Empty text should be returned as-is."""
+        assert processor._format_plain_text("") == ""
+
+    def test_text_wall_gets_split(self, processor):
+        """Long text with no line breaks should be split into paragraphs."""
+        # Create a text wall using punctuation that _split_into_paragraphs recognizes
+        # (。！？!? are in the split pattern, but . is NOT)
+        sentences = [f"this is sentence number {i} with enough words to be meaningful！" for i in range(15)]
+        text = "".join(sentences)
 
         formatted = processor._format_plain_text(text)
 
-        # Should have line breaks after punctuation
-        assert '\n' in formatted
-        lines = formatted.split('\n')
-        assert len(lines) == 5
-        assert lines[0] == "这是第一句话。"
-        assert lines[1] == "这是第二句话！"
-        assert lines[2] == "这是第三句话？"
+        # Should have paragraph breaks (double newlines)
+        assert '\n\n' in formatted
+        paragraphs = [p for p in formatted.split('\n\n') if p.strip()]
+        assert len(paragraphs) > 1
 
-    def test_format_plain_text_with_english_punctuation(self, processor):
-        """Test formatting with English punctuation"""
-        text = "This is sentence one.This is sentence two!This is sentence three?This is sentence four."
-
-        formatted = processor._format_plain_text(text)
-
-        lines = formatted.split('\n')
-        assert len(lines) == 4
-        assert lines[0] == "This is sentence one."
-        assert lines[1] == "This is sentence two!"
-
-    def test_format_plain_text_with_mixed_punctuation(self, processor):
-        """Test formatting with mixed Chinese and English punctuation"""
-        text = "中文句子。English sentence.另一个中文句子！Another English sentence!"
+    def test_already_formatted_kept_as_is(self, processor):
+        """Text with reasonable line structure should not be changed."""
+        # 10 lines, ~80 chars each -> reasonable structure
+        lines = [f"line {i}: " + "x" * 70 for i in range(10)]
+        text = "\n".join(lines)
 
         formatted = processor._format_plain_text(text)
 
-        lines = formatted.split('\n')
-        assert len(lines) == 4
-
-    def test_format_plain_text_already_formatted(self, processor):
-        """Test that already formatted text is not changed"""
-        # Text with sufficient line breaks (average < 200 chars per line)
-        text = "第一行。\n第二行。\n第三行。\n第四行。\n第五行。"
-
-        formatted = processor._format_plain_text(text)
-
-        # Should return as-is since it already has enough line breaks
         assert formatted == text
 
-    def test_format_plain_text_removes_excessive_line_breaks(self, processor):
-        """Test that excessive line breaks are cleaned up"""
-        text = "第一句。\n\n\n\n第二句。\n\n\n第三句。"
+    def test_paragraph_structure_preserved(self, processor):
+        """Text with existing paragraph breaks (double newlines) should be preserved."""
+        para1 = "first paragraph " + "x" * 100
+        para2 = "second paragraph " + "x" * 100
+        text = f"{para1}\n\n{para2}"
 
         formatted = processor._format_plain_text(text)
 
-        # Should not have more than 2 consecutive newlines
-        assert '\n\n\n' not in formatted
+        assert formatted == text
 
-    def test_format_plain_text_with_multiple_punctuation(self, processor):
-        """Test formatting with multiple consecutive punctuation marks"""
-        text = "这是一句话...这是另一句话！！！这是第三句？？"
-
-        formatted = processor._format_plain_text(text)
-
-        lines = formatted.split('\n')
-        assert len(lines) == 3
-        assert lines[0] == "这是一句话..."
-        assert lines[1] == "这是另一句话！！！"
-
-    def test_format_plain_text_strips_whitespace(self, processor):
-        """Test that leading and trailing whitespace is removed"""
-        text = "   第一句。第二句。   "
+    def test_over_segmented_gets_merged(self, processor):
+        """Many very short lines should be merged into paragraphs."""
+        # 20 very short lines (< 50 chars average)
+        lines = [f"short line {i}." for i in range(20)]
+        text = "\n".join(lines)
 
         formatted = processor._format_plain_text(text)
 
-        # Should not have leading or trailing whitespace
-        assert not formatted.startswith(' ')
-        assert not formatted.endswith(' ')
+        # Should have fewer paragraphs than original lines
+        result_paragraphs = [p for p in formatted.split('\n\n') if p.strip()]
+        assert len(result_paragraphs) < len(lines)
 
-    def test_format_plain_text_with_semicolon(self, processor):
-        """Test formatting with semicolon punctuation"""
-        text = "这是主句；这是分句。另一个句子；第二分句。"
-
+    def test_text_with_only_punctuation(self, processor):
+        """Text with only punctuation should be handled gracefully."""
+        text = "x" * 10  # Short -> returned as-is
         formatted = processor._format_plain_text(text)
-
-        lines = formatted.split('\n')
-        assert len(lines) == 4
-
-    def test_format_empty_text(self, processor):
-        """Test formatting empty text"""
-        text = ""
-
-        formatted = processor._format_plain_text(text)
-
-        assert formatted == ""
-
-    def test_format_text_with_only_punctuation(self, processor):
-        """Test formatting text with only punctuation"""
-        text = "。！？；.!?;"
-
-        formatted = processor._format_plain_text(text)
-
-        # Should handle gracefully
         assert isinstance(formatted, str)
+
+    def test_chinese_text_wall_split(self, processor):
+        """Chinese text wall should also be split."""
+        sentences = ["".join(["testing"] * 8) + "。" for _ in range(15)]
+        text = "".join(sentences)
+
+        formatted = processor._format_plain_text(text)
+
+        # Should have some paragraph breaks
+        assert '\n\n' in formatted

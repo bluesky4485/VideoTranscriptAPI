@@ -164,7 +164,28 @@ def test_downloader_new_interface_mapping(downloader_cls, fake_info, expected_ex
     downloader = downloader_cls()
 
     downloader.extract_video_id = types.MethodType(lambda self, url: fake_info["video_id"], downloader)
-    downloader.get_video_info = types.MethodType(lambda self, url: fake_info, downloader)
+
+    # Mock _fetch_metadata and _fetch_download_info to avoid real network calls
+    def _fake_fetch_metadata(self, url, video_id):
+        return VideoMetadata(
+            video_id=video_id,
+            platform=fake_info["platform"],
+            title=fake_info.get("video_title", ""),
+            author=fake_info.get("author", ""),
+            description=fake_info.get("description", ""),
+        )
+
+    def _fake_fetch_download_info(self, url, video_id):
+        return DownloadInfo(
+            download_url=fake_info.get("download_url"),
+            file_ext=expected_ext,
+            filename=fake_info.get("filename"),
+            downloaded=fake_info.get("downloaded", False),
+            local_file=fake_info.get("local_file"),
+        )
+
+    downloader._fetch_metadata = types.MethodType(_fake_fetch_metadata, downloader)
+    downloader._fetch_download_info = types.MethodType(_fake_fetch_download_info, downloader)
 
     metadata = downloader.get_metadata("http://example.com")
     download_info = downloader.get_download_info("http://example.com")

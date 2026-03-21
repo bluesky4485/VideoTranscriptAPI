@@ -1,102 +1,94 @@
+"""
+Transcriber unit tests.
+
+Covers:
+- Successful transcription flow
+- Error handling when transcription fails
+- File not found handling
+
+All console output must be in English only (no emoji, no Chinese).
+"""
+
 import os
 import sys
-import json
-import pytest
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-# 添加项目根目录到导入路径
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..', 'src')))
 
 from video_transcript_api.transcriber import Transcriber
 
 
-@patch('video_transcript_api.transcriber.transcriber.client_transcriber')
 class TestTranscriber(unittest.TestCase):
-    """测试转录器"""
-    
+    """Test transcriber core flow."""
+
     def setUp(self):
-        """设置测试环境"""
-        # 创建临时配置
+        """Set up test environment."""
+        self.temp_dir = tempfile.mkdtemp()
         self.test_config = {
             "capswriter": {
                 "server_url": "ws://localhost:6006"
             },
             "storage": {
-                "output_dir": "./test_output"
+                "output_dir": self.temp_dir
             }
         }
-        
-        # 创建临时输出目录
-        os.makedirs("./test_output", exist_ok=True)
-        
-        # 创建测试文件
-        self.test_merge_txt_content = "这是测试的转录文本，包含一些句子。这是第二句。"
-        self.test_audio_file = "test_audio.mp3"
-        self.test_merge_txt = "test_audio.merge.txt"
-        
-        # 写入merge.txt测试文件
-        with open(self.test_merge_txt, "w", encoding="utf-8") as f:
-            f.write(self.test_merge_txt_content)
-        
-        # 创建空的测试音频文件
+
+        # Create a fake audio file
+        self.test_audio_file = os.path.join(self.temp_dir, "test_audio.mp3")
         with open(self.test_audio_file, "w", encoding="utf-8") as f:
-            f.write("模拟音频文件")
-    
+            f.write("fake audio")
+
     def tearDown(self):
-        """清理测试环境"""
-        # 删除测试文件
-        for file in [self.test_audio_file, self.test_merge_txt]:
-            if os.path.exists(file):
-                os.remove(file)
-        
-        # 删除测试输出目录中的文件
-        for file in os.listdir("./test_output"):
-            os.remove(os.path.join("./test_output", file))
-        
-        # 删除测试输出目录
-        if os.path.exists("./test_output"):
-            os.rmdir("./test_output")
-    
-    def test_transcribe(self, mock_client_transcriber):
-        """测试转录功能"""
-        # 设置模拟客户端的返回值
-        mock_client_transcriber.transcribe.return_value = (True, [self.test_merge_txt])
-        
-        # 创建转录器实例
+        """Clean up test files."""
+        import shutil
+        if os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir)
+
+    @patch("video_transcript_api.transcriber.transcriber.CapsWriterClient")
+    def test_transcribe_success(self, mock_client_cls):
+        """Successful transcription should return transcript text."""
+        # Create a fake .txt output file
+        txt_path = os.path.join(self.temp_dir, "test_output.txt")
+        with open(txt_path, "w", encoding="utf-8") as f:
+            f.write("This is the transcribed text.")
+
+        # Mock client
+        mock_client = MagicMock()
+        mock_client.transcribe_file.return_value = (True, [Path(txt_path)])
+        mock_client_cls.return_value = mock_client
+
         transcriber = Transcriber(config=self.test_config)
-        
-        # 调用转录方法
         result = transcriber.transcribe(self.test_audio_file, "test_output")
-        
-        # 验证客户端转录方法被调用
-        mock_client_transcriber.transcribe.assert_called_once_with(self.test_audio_file)
-        
-        # 验证结果
+
+        mock_client.transcribe_file.assert_called_once_with(self.test_audio_file)
         self.assertIn("transcript", result)
-        self.assertEqual(result["transcript"], self.test_merge_txt_content)
-        
-        # 验证文件路径存在于结果中
-        self.assertIn("merge_txt_path", result)
-        
-        # 验证转录结果是否包含merge.txt内容
-        self.assertEqual(result["transcript"], self.test_merge_txt_content)
-    
-    def test_transcribe_error(self, mock_client_transcriber):
-        """测试转录失败的情况"""
-        # 设置模拟客户端的返回值为失败
-        mock_client_transcriber.transcribe.return_value = (False, [])
-        
-        # 创建转录器实例
+        self.assertEqual(result["transcript"], "This is the transcribed text.")
+
+    @patch("video_transcript_api.transcriber.transcriber.CapsWriterClient")
+    def test_transcribe_failure(self, mock_client_cls):
+        """Failed transcription should raise RuntimeError."""
+        mock_client = MagicMock()
+        mock_client.transcribe_file.return_value = (False, [])
+        mock_client_cls.return_value = mock_client
+
         transcriber = Transcriber(config=self.test_config)
-        
-        # 调用转录方法应该抛出异常
+
         with self.assertRaises(RuntimeError):
             transcriber.transcribe(self.test_audio_file, "test_output")
-        
-        # 验证客户端转录方法被调用
-        mock_client_transcriber.transcribe.assert_called_once_with(self.test_audio_file)
+
+    @patch("video_transcript_api.transcriber.transcriber.CapsWriterClient")
+    def test_transcribe_file_not_found(self, mock_client_cls):
+        """Non-existent audio file should raise FileNotFoundError."""
+        mock_client_cls.return_value = MagicMock()
+
+        transcriber = Transcriber(config=self.test_config)
+
+        with self.assertRaises(FileNotFoundError):
+            transcriber.transcribe("/nonexistent/audio.mp3", "test_output")
 
 
 if __name__ == '__main__':
-    unittest.main() 
+    unittest.main()
