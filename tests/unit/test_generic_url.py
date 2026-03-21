@@ -10,8 +10,6 @@ import sys
 import requests
 import json
 
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-sys.path.insert(0, os.path.join(project_root, 'src'))
 
 from video_transcript_api.downloaders import create_downloader
 from video_transcript_api.utils.logging import load_config, setup_logger

@@ -12,8 +12,6 @@ import sys
 from pathlib import Path
 
 # Add src directory to path
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root / "src"))
 
 from video_transcript_api.utils.rendering.markdown_renderer import (
     _fix_list_spacing,

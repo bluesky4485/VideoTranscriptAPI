@@ -18,7 +18,6 @@ import threading
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from video_transcript_api.utils.logging.audit_logger import AuditLogger, CURRENT_SCHEMA_VERSION
 

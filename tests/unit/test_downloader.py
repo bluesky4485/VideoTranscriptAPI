@@ -13,7 +13,6 @@ import os
 import sys
 import unittest
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..', 'src')))
 
 from video_transcript_api.downloaders import create_downloader
 from video_transcript_api.downloaders.douyin import DouyinDownloader

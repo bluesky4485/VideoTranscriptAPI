@@ -14,7 +14,6 @@ import sys
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from pydantic import ValidationError
 from video_transcript_api.api.services.transcription import (

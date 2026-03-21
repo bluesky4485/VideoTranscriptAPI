@@ -16,7 +16,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..', 'src')))
 
 from video_transcript_api.transcriber import Transcriber
 

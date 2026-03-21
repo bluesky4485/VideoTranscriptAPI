@@ -12,7 +12,6 @@ import unittest
 from unittest.mock import patch, MagicMock
 
 # 添加项目根目录到 Python 路径
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 from video_transcript_api.utils.accounts import UserManager
 from video_transcript_api.utils.logging import AuditLogger

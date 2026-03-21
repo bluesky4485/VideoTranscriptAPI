@@ -7,12 +7,6 @@ View Token复用功能测试
 同时验证每次请求都正常创建新的task_id和处理流程。
 """
 
-import sys
-import os
-
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.append(os.path.join(project_root, "src"))
-
 from video_transcript_api.cache import CacheManager
 
 def test_view_token_reuse():

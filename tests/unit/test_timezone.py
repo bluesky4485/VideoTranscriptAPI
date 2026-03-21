@@ -7,7 +7,6 @@ import sys
 from datetime import datetime, timezone, timedelta
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-sys.path.insert(0, os.path.join(project_root, "src"))
 
 def test_timezone_functionality():
     """测试时区功能"""
@@ -15,7 +14,6 @@ def test_timezone_functionality():
     
     project_root = os.path.dirname(os.path.abspath(__file__))
     os.chdir(project_root)
-    sys.path.insert(0, project_root)
     
     try:
         from video_transcript_api.utils.timeutil import (

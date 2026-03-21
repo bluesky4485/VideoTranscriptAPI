@@ -17,7 +17,6 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from video_transcript_api.llm.core.llm_client import LLMClient, LLMResponse
 from video_transcript_api.llm.core.errors import RetryableError, FatalError

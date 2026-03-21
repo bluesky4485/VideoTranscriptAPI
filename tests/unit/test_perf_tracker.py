@@ -18,7 +18,6 @@ import time
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from video_transcript_api.utils.perf_tracker import PerfTracker
 
