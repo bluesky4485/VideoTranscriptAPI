@@ -695,3 +695,64 @@ class TestQualityValidator:
         )
         assert v.overall_score_threshold == 6.0
         assert v.minimum_single_score == 5.0
+
+
+# ============================================================
+# 16. llm.prompts.schemas re-export validation
+# ============================================================
+
+class TestPromptsSchemaReExports:
+    """Verify that llm.prompts.schemas.__init__ re-exports all schemas correctly."""
+
+    def test_all_schemas_importable_from_package(self):
+        """All 4 schemas should be importable from llm.prompts.schemas."""
+        from src.video_transcript_api.llm.prompts.schemas import (
+            KEY_INFO_SCHEMA,
+            SPEAKER_MAPPING_SCHEMA,
+            VALIDATION_RESULT_SCHEMA,
+            UNIFIED_VALIDATION_SCHEMA,
+        )
+        assert isinstance(KEY_INFO_SCHEMA, dict)
+        assert isinstance(SPEAKER_MAPPING_SCHEMA, dict)
+        assert isinstance(VALIDATION_RESULT_SCHEMA, dict)
+        assert isinstance(UNIFIED_VALIDATION_SCHEMA, dict)
+
+    def test_prompts_speaker_mapping_schema_structure(self):
+        """prompts.schemas.speaker_mapping should have correct top-level structure."""
+        from src.video_transcript_api.llm.prompts.schemas.speaker_mapping import SPEAKER_MAPPING_SCHEMA
+        _assert_json_schema_object(
+            SPEAKER_MAPPING_SCHEMA,
+            ["speaker_mapping", "confidence", "reasoning"],
+        )
+        assert SPEAKER_MAPPING_SCHEMA["additionalProperties"] is False
+
+    def test_prompts_validation_schema_structure(self):
+        """prompts.schemas.validation should have correct top-level structure."""
+        from src.video_transcript_api.llm.prompts.schemas.validation import VALIDATION_RESULT_SCHEMA
+        expected_required = [
+            "overall_score", "scores", "pass", "issues", "recommendation"
+        ]
+        _assert_json_schema_object(VALIDATION_RESULT_SCHEMA, expected_required)
+        assert VALIDATION_RESULT_SCHEMA["additionalProperties"] is False
+
+    def test_prompts_unified_validation_schema_structure(self):
+        """prompts.schemas.unified_validation should have correct top-level structure."""
+        from src.video_transcript_api.llm.prompts.schemas.unified_validation import UNIFIED_VALIDATION_SCHEMA
+        _assert_json_schema_object(UNIFIED_VALIDATION_SCHEMA, ["scores"])
+        assert UNIFIED_VALIDATION_SCHEMA["additionalProperties"] is False
+
+    def test_prompts_schemas_match_llm_schemas(self):
+        """prompts.schemas and llm.schemas should export identical objects."""
+        from src.video_transcript_api.llm.prompts.schemas import (
+            SPEAKER_MAPPING_SCHEMA as PS_SM,
+            VALIDATION_RESULT_SCHEMA as PS_VR,
+            UNIFIED_VALIDATION_SCHEMA as PS_UV,
+        )
+        from src.video_transcript_api.llm.schemas.speaker_mapping import SPEAKER_MAPPING_SCHEMA as LS_SM
+        from src.video_transcript_api.llm.schemas.validation import VALIDATION_RESULT_SCHEMA as LS_VR
+        from src.video_transcript_api.llm.schemas.unified_validation import UNIFIED_VALIDATION_SCHEMA as LS_UV
+
+        # These should be the exact same dict objects (both modules define them identically)
+        assert PS_SM == LS_SM
+        assert PS_VR == LS_VR
+        assert PS_UV == LS_UV

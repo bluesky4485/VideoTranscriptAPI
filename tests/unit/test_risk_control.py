@@ -403,3 +403,133 @@ class TestTextSanitizerIsInURLRange:
         url_ranges = [(5, 10), (20, 30)]
         assert self.sanitizer._is_in_url_range(22, 25, url_ranges) is True
         assert self.sanitizer._is_in_url_range(12, 18, url_ranges) is False
+
+
+# ---------------------------------------------------------------------------
+# Module-level API tests (risk_control/__init__.py)
+# ---------------------------------------------------------------------------
+
+class TestRiskControlModuleAPI:
+    """Tests for risk_control module-level functions: init_risk_control, is_enabled, sanitize_text."""
+
+    def setup_method(self):
+        """Reset module globals before each test."""
+        import src.video_transcript_api.risk_control as rc_module
+        rc_module._words_manager = None
+        rc_module._text_sanitizer = None
+
+    def teardown_method(self):
+        """Reset module globals after each test."""
+        import src.video_transcript_api.risk_control as rc_module
+        rc_module._words_manager = None
+        rc_module._text_sanitizer = None
+
+    def test_is_enabled_returns_false_when_not_initialized(self):
+        """is_enabled() should return False before init_risk_control is called."""
+        from src.video_transcript_api.risk_control import is_enabled
+        assert is_enabled() is False
+
+    def test_is_enabled_returns_false_when_disabled_in_config(self):
+        """is_enabled() should return False when config has enabled=False."""
+        from src.video_transcript_api.risk_control import init_risk_control, is_enabled
+        init_risk_control({"risk_control": {"enabled": False}})
+        assert is_enabled() is False
+
+    def test_is_enabled_returns_false_when_no_risk_control_key(self):
+        """is_enabled() should return False when risk_control key is missing."""
+        from src.video_transcript_api.risk_control import init_risk_control, is_enabled
+        init_risk_control({})
+        assert is_enabled() is False
+
+    @patch("src.video_transcript_api.risk_control.SensitiveWordsManager")
+    def test_init_risk_control_enabled(self, MockManager):
+        """init_risk_control with enabled=True should create manager and sanitizer."""
+        mock_instance = MagicMock()
+        mock_instance.load_words.return_value = {"badword"}
+        MockManager.return_value = mock_instance
+
+        from src.video_transcript_api.risk_control import init_risk_control, is_enabled
+        init_risk_control({"risk_control": {"enabled": True}})
+
+        assert is_enabled() is True
+        MockManager.assert_called_once()
+        mock_instance.load_words.assert_called_once()
+
+    @patch("src.video_transcript_api.risk_control.SensitiveWordsManager")
+    def test_sanitize_text_when_enabled(self, MockManager):
+        """sanitize_text should delegate to TextSanitizer when enabled."""
+        mock_instance = MagicMock()
+        mock_instance.load_words.return_value = {"forbidden"}
+        MockManager.return_value = mock_instance
+
+        from src.video_transcript_api.risk_control import init_risk_control, sanitize_text
+        init_risk_control({"risk_control": {"enabled": True}})
+
+        result = sanitize_text("this contains forbidden content")
+        assert result["has_sensitive"] is True
+        assert "forbidden" in result["sensitive_words"]
+
+    def test_sanitize_text_when_disabled(self):
+        """sanitize_text should return original text when not enabled."""
+        from src.video_transcript_api.risk_control import sanitize_text
+        result = sanitize_text("any text here")
+
+        assert result["has_sensitive"] is False
+        assert result["sanitized_text"] == "any text here"
+        assert result["sensitive_words"] == []
+
+    @patch("src.video_transcript_api.risk_control.SensitiveWordsManager")
+    def test_sanitize_text_with_text_type(self, MockManager):
+        """sanitize_text should pass text_type to TextSanitizer."""
+        mock_instance = MagicMock()
+        mock_instance.load_words.return_value = {"secret"}
+        MockManager.return_value = mock_instance
+
+        from src.video_transcript_api.risk_control import init_risk_control, sanitize_text
+        init_risk_control({"risk_control": {"enabled": True}})
+
+        result = sanitize_text("this is secret content", text_type="summary")
+        assert result["has_sensitive"] is True
+        assert result["sanitized_text"] == RISK_WARNING
+
+
+class TestSensitiveWordsManagerCache:
+    """Tests for SensitiveWordsManager cache save/load operations."""
+
+    def test_save_and_load_cache(self, tmp_path):
+        """Words saved to cache should be loadable."""
+        cache_file = str(tmp_path / "cache" / "words.txt")
+
+        with patch("os.makedirs"):
+            manager = SensitiveWordsManager({
+                "cache_file": cache_file,
+            })
+
+        words = {"alpha", "beta", "gamma"}
+
+        # Create directory for real file I/O
+        os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+
+        assert manager._save_to_cache(words) is True
+        loaded = manager._load_from_cache()
+        assert loaded == words
+
+    def test_load_from_cache_missing_file(self, tmp_path):
+        """Loading from non-existent cache file returns empty set."""
+        cache_file = str(tmp_path / "nonexistent" / "words.txt")
+
+        with patch("os.makedirs"):
+            manager = SensitiveWordsManager({
+                "cache_file": cache_file,
+            })
+
+        result = manager._load_from_cache()
+        assert result == set()
+
+    def test_get_words_returns_current_set(self):
+        """get_words should return the current sensitive_words set."""
+        with patch("os.makedirs"):
+            manager = SensitiveWordsManager({})
+
+        manager.sensitive_words = {"test1", "test2"}
+        assert manager.get_words() == {"test1", "test2"}
