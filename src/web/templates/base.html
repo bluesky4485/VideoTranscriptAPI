@@ -1,6 +1,13 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
 <head>
+    <script>
+    (function() {
+        var saved = localStorage.getItem('vta_theme_preference');
+        var theme = saved || 'dark';
+        document.documentElement.setAttribute('data-theme', theme);
+    })();
+    </script>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex">
@@ -15,20 +22,7 @@
     <style>
         /* CSS变量定义 - 主题系统 */
         :root {
-            /* 浅色主题 */
-            --bg-gradient-start: #667eea;
-            --bg-gradient-end: #764ba2;
-            --text-primary: #333;
-            --text-secondary: #6b7280;
-            --bg-primary: #ffffff;
-            --bg-secondary: #f8f9fa;
-            --bg-tertiary: #f3f4f6;
-            --border-primary: #e5e7eb;
-            --header-text: #ffffff;
-        }
-
-        /* 深色主题 */
-        [data-theme="dark"] {
+            /* 深色主题（默认） */
             --bg-gradient-start: #1e293b;
             --bg-gradient-end: #0f172a;
             --text-primary: #f8fafc;
@@ -38,6 +32,19 @@
             --bg-tertiary: #475569;
             --border-primary: #475569;
             --header-text: #f8fafc;
+        }
+
+        /* 浅色主题 */
+        [data-theme="light"] {
+            --bg-gradient-start: #667eea;
+            --bg-gradient-end: #764ba2;
+            --text-primary: #333;
+            --text-secondary: #6b7280;
+            --bg-primary: #ffffff;
+            --bg-secondary: #f8f9fa;
+            --bg-tertiary: #f3f4f6;
+            --border-primary: #e5e7eb;
+            --header-text: #ffffff;
         }
 
         body {
@@ -954,8 +961,8 @@
 <body>
     <div class="container">
         <div class="header">
-            <button id="theme-toggle" class="theme-toggle" title="切换主题">
-                🌙
+            <button id="theme-toggle" class="theme-toggle" title="切换到浅色模式">
+                ☀️
             </button>
             <h1>{{ title or "视频转录查看器" }}</h1>
             {% if author or url %}
@@ -1006,24 +1013,25 @@
             }
             
             function detectSystemTheme() {
-                if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-                    return 'dark';
+                if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+                    return 'light';
                 }
-                return 'light';
+                return 'dark';
             }
             
             function applyTheme(theme) {
-                const body = document.body;
+                const root = document.documentElement;
                 const themeToggle = document.getElementById('theme-toggle');
-                
+
+                // 始终通过 data-theme 属性设置主题
+                root.setAttribute('data-theme', theme);
+
                 if (theme === 'dark') {
-                    body.setAttribute('data-theme', 'dark');
                     if (themeToggle) {
                         themeToggle.textContent = '☀️';
                         themeToggle.title = '切换到浅色模式';
                     }
                 } else {
-                    body.removeAttribute('data-theme');
                     if (themeToggle) {
                         themeToggle.textContent = '🌙';
                         themeToggle.title = '切换到深色模式';
@@ -1032,7 +1040,7 @@
             }
             
             function toggleTheme() {
-                const currentTheme = document.body.hasAttribute('data-theme') ? 'dark' : 'light';
+                const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
                 const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
                 const themeToggle = document.getElementById('theme-toggle');
                 

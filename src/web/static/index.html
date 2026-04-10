@@ -1,6 +1,13 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
 <head>
+    <script>
+    (function() {
+        var saved = localStorage.getItem('vta_theme_preference');
+        var theme = saved || 'dark';
+        document.documentElement.setAttribute('data-theme', theme);
+    })();
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>视频转录 - VideoTranscriptAPI</title>
@@ -12,8 +19,8 @@
 <body>
     <div class="container">
         <header class="header">
-            <button id="theme-toggle" class="theme-toggle" title="切换主题">
-                🌙
+            <button id="theme-toggle" class="theme-toggle" title="切换到浅色模式">
+                ☀️
             </button>
             <h1>🎬 视频转录服务</h1>
             <p>支持多平台视频转录，智能说话人识别</p>

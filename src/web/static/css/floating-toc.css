@@ -11,25 +11,7 @@
     --toc-right-offset: 20px;
     --toc-top-offset: 100px;
 
-    /* 浅色主题 */
-    --toc-bg: rgba(255, 255, 255, 0.95);
-    --toc-border: #e5e7eb;
-    --toc-text: #333;
-    --toc-text-secondary: #6b7280;
-    --toc-active: #667eea;
-    --toc-hover: #f3f4f6;
-    --toc-indicator-start: #667eea;
-    --toc-indicator-end: #764ba2;
-    --toc-shadow: rgba(0, 0, 0, 0.1);
-
-    /* 移动端浮动按钮 */
-    --toc-mobile-btn-size: 56px;
-    --toc-mobile-btn-bottom: 80px;
-    --toc-mobile-btn-right: 20px;
-}
-
-/* 深色主题 */
-[data-theme="dark"] {
+    /* 深色主题（默认） */
     --toc-bg: rgba(30, 41, 59, 0.95);
     --toc-border: #475569;
     --toc-text: #f8fafc;
@@ -39,6 +21,24 @@
     --toc-indicator-start: #06B6D4;
     --toc-indicator-end: #3B82F6;
     --toc-shadow: rgba(0, 0, 0, 0.3);
+
+    /* 移动端浮动按钮 */
+    --toc-mobile-btn-size: 56px;
+    --toc-mobile-btn-bottom: 80px;
+    --toc-mobile-btn-right: 20px;
+}
+
+/* 浅色主题 */
+[data-theme="light"] {
+    --toc-bg: rgba(255, 255, 255, 0.95);
+    --toc-border: #e5e7eb;
+    --toc-text: #333;
+    --toc-text-secondary: #6b7280;
+    --toc-active: #667eea;
+    --toc-hover: #f3f4f6;
+    --toc-indicator-start: #667eea;
+    --toc-indicator-end: #764ba2;
+    --toc-shadow: rgba(0, 0, 0, 0.1);
 }
 
 /* ========== PC 端浮动 TOC ========== */

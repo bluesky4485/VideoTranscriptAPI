@@ -27,6 +27,7 @@ from ...utils.notifications import (
     send_long_text_wechat,
 )
 from ...utils.rendering import get_base_url
+from ...utils.perf_tracker import PerfTracker
 
 logger = get_logger()
 config = get_config()
@@ -302,6 +303,9 @@ def process_transcription(
         download_url: 实际下载地址（可选，如果提供则优先使用）
         metadata_override: 元数据覆盖（dict）
     """
+    # 性能追踪器：记录各阶段耗时
+    tracker = PerfTracker(task_id=task_id)
+
     try:
         # 规范化 download_url：将空字符串转换为 None
         if download_url is not None and isinstance(download_url, str) and not download_url.strip():
@@ -337,44 +341,46 @@ def process_transcription(
         check_url = url
         logger.info(f"[URL解析] 开始解析 URL: {check_url[:100]}")
 
-        try:
-            # 使用 URLParser 统一解析（支持短链接自动解析）
-            url_parser = URLParser()
-            parsed_url = url_parser.parse(check_url)
+        with tracker.track("url_parse"):
+            try:
+                # 使用 URLParser 统一解析（支持短链接自动解析）
+                url_parser = URLParser()
+                parsed_url = url_parser.parse(check_url)
 
-            platform = parsed_url.platform
-            video_id = parsed_url.video_id
+                platform = parsed_url.platform
+                video_id = parsed_url.video_id
 
-            logger.info(
-                f"[URL解析] 解析成功: platform={platform}, video_id={video_id}, "
-                f"is_short_url={parsed_url.is_short_url}"
-            )
+                logger.info(
+                    f"[URL解析] 解析成功: platform={platform}, video_id={video_id}, "
+                    f"is_short_url={parsed_url.is_short_url}"
+                )
 
-        except Exception as e:
-            # URL 解析失败，回退到 generic 模式
-            logger.warning(f"[URL解析] 解析失败: {e}，使用 generic 模式")
-            platform = 'generic'
-            video_id = generate_media_id_from_url(url)
-            logger.info(f"[URL解析] 回退到通用标识: platform={platform}, video_id={video_id}")
+            except Exception as e:
+                # URL 解析失败，回退到 generic 模式
+                logger.warning(f"[URL解析] 解析失败: {e}，使用 generic 模式")
+                platform = 'generic'
+                video_id = generate_media_id_from_url(url)
+                logger.info(f"[URL解析] 回退到通用标识: platform={platform}, video_id={video_id}")
 
         # ==================== 阶段2: 缓存检测（在创建下载器之前）====================
         cache_data = None
         is_generic_downloader = platform == 'generic'
 
-        if video_id and platform and not is_generic_downloader:
-            logger.info(
-                f"[缓存检测] 检查缓存: platform={platform}, video_id={video_id}, "
-                f"use_speaker_recognition={use_speaker_recognition}"
-            )
-            cache_data = cache_manager.get_cache(
-                platform=platform,
-                media_id=video_id,
-                use_speaker_recognition=use_speaker_recognition,
-            )
-        else:
-            logger.info(
-                f"[缓存检测] 跳过缓存检查 (platform={platform}, is_generic={is_generic_downloader})"
-            )
+        with tracker.track("cache_check"):
+            if video_id and platform and not is_generic_downloader:
+                logger.info(
+                    f"[缓存检测] 检查缓存: platform={platform}, video_id={video_id}, "
+                    f"use_speaker_recognition={use_speaker_recognition}"
+                )
+                cache_data = cache_manager.get_cache(
+                    platform=platform,
+                    media_id=video_id,
+                    use_speaker_recognition=use_speaker_recognition,
+                )
+            else:
+                logger.info(
+                    f"[缓存检测] 跳过缓存检查 (platform={platform}, is_generic={is_generic_downloader})"
+                )
 
         if cache_data:
             logger.info("[缓存检测] ✅ 缓存命中，直接返回")
@@ -519,6 +525,10 @@ def process_transcription(
                     download_url=download_url,
                 )
 
+                # 缓存完全命中（含 LLM 结果），记录计数并输出性能摘要
+                tracker.count("cache_hit")
+                tracker.log_summary()
+
                 return {
                     "status": "success",
                     "message": "使用已有缓存成功",
@@ -539,6 +549,9 @@ def process_transcription(
                 transcript="正在处理已存在的转录文本...",
             )
 
+            # 缓存部分命中（有转录但无 LLM 结果），记录计数
+            tracker.count("cache_hit_partial")
+
             try:
                 llm_task_queue.put(
                     {
@@ -557,6 +570,7 @@ def process_transcription(
                         else None,
                         "is_generic": is_generic_downloader or is_from_generic,
                         "wechat_webhook": wechat_webhook,
+                        "perf_tracker": tracker,
                     }
                 )
                 logger.info(
@@ -587,31 +601,32 @@ def process_transcription(
             download_info_obj = None
             parse_url = url
 
-            try:
-                logger.info(f"[元数据获取] 创建下载器实例: {parse_url}")
-                metadata_downloader = create_downloader(parse_url)
-                logger.info(
-                    f"[元数据获取] 下载器类型: {metadata_downloader.__class__.__name__}"
-                )
+            with tracker.track("metadata"):
+                try:
+                    logger.info(f"[元数据获取] 创建下载器实例: {parse_url}")
+                    metadata_downloader = create_downloader(parse_url)
+                    logger.info(
+                        f"[元数据获取] 下载器类型: {metadata_downloader.__class__.__name__}"
+                    )
 
-                metadata_obj = metadata_downloader.get_metadata(parse_url)
-                parsed_metadata = {
-                    "video_id": metadata_obj.video_id,
-                    "video_title": metadata_obj.title,
-                    "title": metadata_obj.title,
-                    "author": metadata_obj.author,
-                    "description": metadata_obj.description,
-                    "platform": metadata_obj.platform,
-                }
-                logger.info(
-                    f"[元数据获取] 成功: platform={metadata_obj.platform}, "
-                    f"video_id={metadata_obj.video_id}, "
-                    f"title={metadata_obj.title[:50]}"
-                )
-            except Exception as e:
-                logger.warning(f"[元数据获取] 失败: {e}")
-                parsed_metadata = None
-                metadata_obj = None
+                    metadata_obj = metadata_downloader.get_metadata(parse_url)
+                    parsed_metadata = {
+                        "video_id": metadata_obj.video_id,
+                        "video_title": metadata_obj.title,
+                        "title": metadata_obj.title,
+                        "author": metadata_obj.author,
+                        "description": metadata_obj.description,
+                        "platform": metadata_obj.platform,
+                    }
+                    logger.info(
+                        f"[元数据获取] 成功: platform={metadata_obj.platform}, "
+                        f"video_id={metadata_obj.video_id}, "
+                        f"title={metadata_obj.title[:50]}"
+                    )
+                except Exception as e:
+                    logger.warning(f"[元数据获取] 失败: {e}")
+                    parsed_metadata = None
+                    metadata_obj = None
 
             # 合并元数据（metadata_override 作为补充或覆盖）
             if parsed_metadata:
@@ -681,10 +696,11 @@ def process_transcription(
                 try:
                     from ...downloaders.youtube_api_errors import YouTubeApiError
 
-                    # 一次 API 请求获取所有信息
-                    api_result = metadata_downloader.fetch_for_transcription(
-                        url, use_speaker_recognition
-                    )
+                    # 一次 API 请求获取所有信息（含下载）
+                    with tracker.track("download"):
+                        api_result = metadata_downloader.fetch_for_transcription(
+                            url, use_speaker_recognition
+                        )
 
                     # 将 API 返回的数据作为 parsed_metadata，与 metadata_override 合并
                     api_metadata = {
@@ -750,6 +766,7 @@ def process_transcription(
                                     "use_speaker_recognition": False,
                                     "is_generic": False,
                                     "wechat_webhook": wechat_webhook,
+                                    "perf_tracker": tracker,
                                 }
                             )
                             logger.info(f"[youtube-api] LLM task queued: {task_id}")
@@ -792,53 +809,54 @@ def process_transcription(
                         )
 
                         # 根据是否需要说话人识别选择转录器
-                        if use_speaker_recognition:
-                            logger.info("[youtube-api] Using FunASR for transcription")
-                            funasr_client = FunASRSpeakerClient()
-                            funasr_result = funasr_client.transcribe_sync(local_file)
-                            transcript = funasr_result["formatted_text"]
-                            transcription_data = funasr_result["transcription_result"]
+                        with tracker.track("transcription"):
+                            if use_speaker_recognition:
+                                logger.info("[youtube-api] Using FunASR for transcription")
+                                funasr_client = FunASRSpeakerClient()
+                                funasr_result = funasr_client.transcribe_sync(local_file)
+                                transcript = funasr_result["formatted_text"]
+                                transcription_data = funasr_result["transcription_result"]
 
-                            cache_result = cache_manager.save_cache(
-                                platform=platform,
-                                url=url,
-                                media_id=media_id,
-                                use_speaker_recognition=True,
-                                transcript_data=transcription_data,
-                                transcript_type="funasr",
-                                title=video_title,
-                                author=author,
-                                description=description,
-                            )
-                            transcription_result = {
-                                "transcript": transcript,
-                                "speaker_recognition": True,
-                                "transcription_data": transcription_data,
-                            }
-                        else:
-                            logger.info(
-                                "[youtube-api] Using CapsWriter for transcription"
-                            )
-                            transcriber = Transcriber()
-                            temp_output_base = datetime.datetime.now().strftime(
-                                "%y%m%d-%H%M%S"
-                            )
-                            transcription_result = transcriber.transcribe(
-                                local_file, temp_output_base
-                            )
-                            transcript = transcription_result.get("transcript", "")
+                                cache_result = cache_manager.save_cache(
+                                    platform=platform,
+                                    url=url,
+                                    media_id=media_id,
+                                    use_speaker_recognition=True,
+                                    transcript_data=transcription_data,
+                                    transcript_type="funasr",
+                                    title=video_title,
+                                    author=author,
+                                    description=description,
+                                )
+                                transcription_result = {
+                                    "transcript": transcript,
+                                    "speaker_recognition": True,
+                                    "transcription_data": transcription_data,
+                                }
+                            else:
+                                logger.info(
+                                    "[youtube-api] Using CapsWriter for transcription"
+                                )
+                                transcriber = Transcriber()
+                                temp_output_base = datetime.datetime.now().strftime(
+                                    "%y%m%d-%H%M%S"
+                                )
+                                transcription_result = transcriber.transcribe(
+                                    local_file, temp_output_base
+                                )
+                                transcript = transcription_result.get("transcript", "")
 
-                            cache_result = cache_manager.save_cache(
-                                platform=platform,
-                                url=url,
-                                media_id=media_id,
-                                use_speaker_recognition=False,
-                                transcript_data=transcript,
-                                transcript_type="capswriter",
-                                title=video_title,
-                                author=author,
-                                description=description,
-                            )
+                                cache_result = cache_manager.save_cache(
+                                    platform=platform,
+                                    url=url,
+                                    media_id=media_id,
+                                    use_speaker_recognition=False,
+                                    transcript_data=transcript,
+                                    transcript_type="capswriter",
+                                    title=video_title,
+                                    author=author,
+                                    description=description,
+                                )
 
                         if not cache_result:
                             logger.error(
@@ -874,6 +892,7 @@ def process_transcription(
                                     else None,
                                     "is_generic": False,
                                     "wechat_webhook": wechat_webhook,
+                                    "perf_tracker": tracker,
                                 }
                             )
                             logger.info(f"[youtube-api] LLM task queued: {task_id}")
@@ -994,6 +1013,7 @@ def process_transcription(
                             "use_speaker_recognition": False,  # 平台字幕没有说话人信息
                             "is_generic": is_generic_downloader or is_from_generic,
                             "wechat_webhook": wechat_webhook,
+                            "perf_tracker": tracker,
                         }
                     )
                     logger.info(
@@ -1048,7 +1068,8 @@ def process_transcription(
                     if download_info_obj and download_info_obj.filename:
                         filename = download_info_obj.filename
 
-                    local_file = download_downloader.download_file(actual_download_url, filename)
+                    with tracker.track("download"):
+                        local_file = download_downloader.download_file(actual_download_url, filename)
                 else:
                     # 确保下载信息已获取
                     if download_info_obj is None and download_downloader:
@@ -1079,11 +1100,13 @@ def process_transcription(
                                 "download_url": download_info_url,
                                 "filename": filename,
                             }
-                            local_file = original_downloader.download_video_with_priority(
-                                url, legacy_video_info
-                            )
+                            with tracker.track("download"):
+                                local_file = original_downloader.download_video_with_priority(
+                                    url, legacy_video_info
+                                )
                         elif download_info_url and filename:
-                            local_file = original_downloader.download_file(download_info_url, filename)
+                            with tracker.track("download"):
+                                local_file = original_downloader.download_file(download_info_url, filename)
                         else:
                             error_msg = f"无法获取下载信息: {url}"
                             logger.error(error_msg)
@@ -1112,66 +1135,67 @@ def process_transcription(
 
                     # platform 和 video_id 已在前面设置
 
-                    # 根据是否需要说话人识别选择转录器
-                    if use_speaker_recognition:
-                        # 使用 FunASR 说话人识别服务器
-                        logger.info("使用 FunASR 说话人识别服务器进行转录")
-                        funasr_client = FunASRSpeakerClient()
-                        funasr_result = funasr_client.transcribe_sync(local_file)
+                    # 根据是否需要说话人识别选择转录器（用 PerfTracker 记录转录阶段耗时）
+                    with tracker.track("transcription"):
+                        if use_speaker_recognition:
+                            # 使用 FunASR 说话人识别服务器
+                            logger.info("使用 FunASR 说话人识别服务器进行转录")
+                            funasr_client = FunASRSpeakerClient()
+                            funasr_result = funasr_client.transcribe_sync(local_file)
 
-                        # 获取格式化的转录文本
-                        transcript = funasr_result["formatted_text"]
-                        transcription_data = funasr_result["transcription_result"]
+                            # 获取格式化的转录文本
+                            transcript = funasr_result["formatted_text"]
+                            transcription_data = funasr_result["transcription_result"]
 
-                        # 使用新缓存系统保存
-                        cache_result = cache_manager.save_cache(
-                            platform=platform,
-                            url=url,
-                            media_id=media_id,
-                            use_speaker_recognition=True,
-                            transcript_data=transcription_data,
-                            transcript_type="funasr",
-                            title=video_title,
-                            author=author,
-                            description=description,
-                        )
+                            # 使用新缓存系统保存
+                            cache_result = cache_manager.save_cache(
+                                platform=platform,
+                                url=url,
+                                media_id=media_id,
+                                use_speaker_recognition=True,
+                                transcript_data=transcription_data,
+                                transcript_type="funasr",
+                                title=video_title,
+                                author=author,
+                                description=description,
+                            )
 
-                        if not cache_result:
-                            logger.error("保存FunASR转录结果到缓存失败")
+                            if not cache_result:
+                                logger.error("保存FunASR转录结果到缓存失败")
 
-                        # 构造与普通转录器兼容的结果
-                        transcription_result = {
-                            "transcript": transcript,
-                            "speaker_recognition": True,
-                            "transcription_data": transcription_data,
-                        }
-                    else:
-                        # 使用普通 CapsWriter 转录器
-                        transcriber = Transcriber()
-                        # 使用时间戳作为临时输出基础名
-                        temp_output_base = datetime.datetime.now().strftime(
-                            "%y%m%d-%H%M%S"
-                        )
-                        transcription_result = transcriber.transcribe(
-                            local_file, temp_output_base
-                        )
-                        transcript = transcription_result.get("transcript", "")
+                            # 构造与普通转录器兼容的结果
+                            transcription_result = {
+                                "transcript": transcript,
+                                "speaker_recognition": True,
+                                "transcription_data": transcription_data,
+                            }
+                        else:
+                            # 使用普通 CapsWriter 转录器
+                            transcriber = Transcriber()
+                            # 使用时间戳作为临时输出基础名
+                            temp_output_base = datetime.datetime.now().strftime(
+                                "%y%m%d-%H%M%S"
+                            )
+                            transcription_result = transcriber.transcribe(
+                                local_file, temp_output_base
+                            )
+                            transcript = transcription_result.get("transcript", "")
 
-                        # 使用新缓存系统保存
-                        cache_result = cache_manager.save_cache(
-                            platform=platform,
-                            url=url,
-                            media_id=media_id,
-                            use_speaker_recognition=False,
-                            transcript_data=transcript,
-                            transcript_type="capswriter",
-                            title=video_title,
-                            author=author,
-                            description=description,
-                        )
+                            # 使用新缓存系统保存
+                            cache_result = cache_manager.save_cache(
+                                platform=platform,
+                                url=url,
+                                media_id=media_id,
+                                use_speaker_recognition=False,
+                                transcript_data=transcript,
+                                transcript_type="capswriter",
+                                title=video_title,
+                                author=author,
+                                description=description,
+                            )
 
-                        if not cache_result:
-                            logger.error("保存CapsWriter转录结果到缓存失败")
+                            if not cache_result:
+                                logger.error("保存CapsWriter转录结果到缓存失败")
 
                     # 获取转录文本
                     transcript = transcription_result.get("transcript", "")
@@ -1206,6 +1230,7 @@ def process_transcription(
                                 else None,
                                 "is_generic": is_generic_downloader or is_from_generic,
                                 "wechat_webhook": wechat_webhook,
+                                "perf_tracker": tracker,
                             }
                         )
                         logger.info(
@@ -1243,6 +1268,8 @@ def process_transcription(
         return result
     except Exception as exc:
         logger.exception(f"转录处理异常: {exc}")
+        # 任务失败时输出已记录的性能摘要
+        tracker.log_summary()
         display_url = url
         task_notifier = (
             WechatNotifier(wechat_webhook) if wechat_webhook else WechatNotifier()

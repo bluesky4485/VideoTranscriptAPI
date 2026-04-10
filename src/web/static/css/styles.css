@@ -1,38 +1,6 @@
 /* CSS变量定义 - 主题系统 */
 :root {
-    /* 浅色主题 */
-    --bg-gradient-start: #667eea;
-    --bg-gradient-end: #764ba2;
-    --text-primary: #333;
-    --text-secondary: #6b7280;
-    --text-tertiary: #9ca3af;
-    --bg-primary: #ffffff;
-    --bg-secondary: #f9fafb;
-    --bg-tertiary: #f3f4f6;
-    --border-primary: #e5e7eb;
-    --border-secondary: #d1d5db;
-    --border-focus: #667eea;
-    --shadow-light: rgba(0,0,0,0.1);
-    --shadow-medium: rgba(0,0,0,0.2);
-    --header-text: #ffffff;
-    --accent-primary: #667eea;
-    --accent-secondary: #764ba2;
-    --success-bg: #ecfdf5;
-    --success-border: #10b981;
-    --success-text: #059669;
-    --error-bg: #fef2f2;
-    --error-border: #ef4444;
-    --error-text: #dc2626;
-    --loading-bg: #f0f9ff;
-    --loading-border: #06b6d4;
-    --loading-text: #0891b2;
-    --scrollbar-track: #f1f1f1;
-    --scrollbar-thumb: #c1c1c1;
-    --scrollbar-thumb-hover: #a8a8a8;
-}
-
-/* 深色主题 */
-[data-theme="dark"] {
+    /* 深色主题（默认） */
     --bg-gradient-start: #1e293b;
     --bg-gradient-end: #0f172a;
     --text-primary: #f8fafc;
@@ -61,6 +29,38 @@
     --scrollbar-track: #334155;
     --scrollbar-thumb: #64748b;
     --scrollbar-thumb-hover: #94a3b8;
+}
+
+/* 浅色主题 */
+[data-theme="light"] {
+    --bg-gradient-start: #667eea;
+    --bg-gradient-end: #764ba2;
+    --text-primary: #333;
+    --text-secondary: #6b7280;
+    --text-tertiary: #9ca3af;
+    --bg-primary: #ffffff;
+    --bg-secondary: #f9fafb;
+    --bg-tertiary: #f3f4f6;
+    --border-primary: #e5e7eb;
+    --border-secondary: #d1d5db;
+    --border-focus: #667eea;
+    --shadow-light: rgba(0,0,0,0.1);
+    --shadow-medium: rgba(0,0,0,0.2);
+    --header-text: #ffffff;
+    --accent-primary: #667eea;
+    --accent-secondary: #764ba2;
+    --success-bg: #ecfdf5;
+    --success-border: #10b981;
+    --success-text: #059669;
+    --error-bg: #fef2f2;
+    --error-border: #ef4444;
+    --error-text: #dc2626;
+    --loading-bg: #f0f9ff;
+    --loading-border: #06b6d4;
+    --loading-text: #0891b2;
+    --scrollbar-track: #f1f1f1;
+    --scrollbar-thumb: #c1c1c1;
+    --scrollbar-thumb-hover: #a8a8a8;
 }
 
 /* 重置和基础样式 */

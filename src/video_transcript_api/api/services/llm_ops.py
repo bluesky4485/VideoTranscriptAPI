@@ -27,6 +27,7 @@ from ...utils.notifications import (
     format_llm_config_markdown,
 )
 from ...utils.rendering import get_base_url
+from ...utils.perf_tracker import PerfTracker
 
 logger = get_logger()
 config = get_config()
@@ -66,6 +67,9 @@ def _handle_llm_task(llm_task: dict):
     """
     task_id = llm_task.get("task_id")
 
+    # 从 transcription 阶段传递过来的性能追踪器，若无则创建新实例
+    tracker: PerfTracker = llm_task.pop("perf_tracker", None) or PerfTracker(task_id=task_id)
+
     try:
         with task_lock(task_id):
             url = llm_task["url"]
@@ -87,7 +91,7 @@ def _handle_llm_task(llm_task: dict):
                 video_title = _generate_title_if_needed(llm_task, video_title, transcript)
                 llm_task["video_title"] = video_title
 
-                # 使用新 LLM 协调器处理任务
+                # 使用新 LLM 协调器处理任务（用 PerfTracker 记录 LLM 处理耗时）
                 logger.info(f"开始使用 LLM 协调器处理任务: {task_id}")
 
                 # 准备内容参数
@@ -99,17 +103,18 @@ def _handle_llm_task(llm_task: dict):
                 # 是否为仅校对模式（重新校对场景）
                 calibrate_only = llm_task.get("calibrate_only", False)
 
-                # 调用新架构
-                coordinator_result = llm_coordinator.process(
-                    content=content,
-                    title=video_title,
-                    author=llm_task.get("author", ""),
-                    description=llm_task.get("description", ""),
-                    platform=platform or "",
-                    media_id=media_id or "",
-                    has_risk=has_risk,
-                    skip_summary=calibrate_only,
-                )
+                # 调用新架构（包含校对和总结）
+                with tracker.track("llm_processing"):
+                    coordinator_result = llm_coordinator.process(
+                        content=content,
+                        title=video_title,
+                        author=llm_task.get("author", ""),
+                        description=llm_task.get("description", ""),
+                        platform=platform or "",
+                        media_id=media_id or "",
+                        has_risk=has_risk,
+                        skip_summary=calibrate_only,
+                    )
 
                 # 适配返回格式
                 result_dict = _build_result_dict(coordinator_result)
@@ -139,6 +144,9 @@ def _handle_llm_task(llm_task: dict):
 
                 logger.info(f"LLM任务处理完成: {task_id}, 标题: {video_title}")
 
+                # 任务成功完成，输出完整性能摘要
+                tracker.log_summary()
+
                 # calibrate_only 模式更新状态
                 if calibrate_only and platform and media_id:
                     cache_manager.update_task_status(
@@ -157,6 +165,8 @@ def _handle_llm_task(llm_task: dict):
 
             except Exception as exc:
                 logger.exception(f"LLM任务处理异常: {task_id}, 错误: {exc}")
+                # LLM 处理失败时输出已记录的性能摘要
+                tracker.log_summary()
                 task_notifier.send_text(f"【LLM API调用异常】{exc}")
 
                 if llm_task.get("calibrate_only"):

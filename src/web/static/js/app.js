@@ -503,27 +503,28 @@ class ThemeManager {
      * 检测系统主题偏好
      */
     static detectSystemTheme() {
-        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-            return 'dark';
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+            return 'light';
         }
-        return 'light';
+        return 'dark';
     }
     
     /**
      * 应用主题
      */
     static applyTheme(theme) {
-        const body = document.body;
+        const root = document.documentElement;
         const themeToggle = document.getElementById('theme-toggle');
-        
+
+        // 始终通过 data-theme 属性设置主题
+        root.setAttribute('data-theme', theme);
+
         if (theme === 'dark') {
-            body.setAttribute('data-theme', 'dark');
             if (themeToggle) {
                 themeToggle.textContent = '☀️';
                 themeToggle.title = '切换到浅色模式';
             }
         } else {
-            body.removeAttribute('data-theme');
             if (themeToggle) {
                 themeToggle.textContent = '🌙';
                 themeToggle.title = '切换到深色模式';
@@ -569,7 +570,7 @@ class ThemeManager {
      * 获取当前主题
      */
     static getCurrentTheme() {
-        return document.body.hasAttribute('data-theme') ? 'dark' : 'light';
+        return document.documentElement.getAttribute('data-theme') || 'dark';
     }
 }
 
