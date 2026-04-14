@@ -598,7 +598,7 @@ function serializeFiltersToURL() {
     if (q)         params.set('q', q);
     if (startDate) params.set('start_date', startDate);
     if (endDate)   params.set('end_date', endDate);
-    if (webhook)   params.set('webhook', webhook);
+    // webhook 含密钥，不写入 URL
     if (platform)  params.set('platform', platform);
     if (author)    params.set('author', author);
     // 默认值不写入 URL，保持简洁
@@ -619,7 +619,7 @@ function loadFiltersFromURL() {
     set('filterQ',          'q');
     set('filterStartDate',  'start_date');
     set('filterEndDate',    'end_date');
-    set('filterWebhook',    'webhook');
+    // webhook 不从 URL 读取
     set('filterPlatform',   'platform');
     set('filterAuthor',     'author');
     set('filterStatus',     'status');
