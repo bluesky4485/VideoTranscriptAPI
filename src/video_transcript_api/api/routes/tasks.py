@@ -170,6 +170,7 @@ async def transcribe_video(
             task_id=task_id,
             user_agent=request.headers.get("User-Agent"),
             remote_ip=request.client.host if request.client else None,
+            wechat_webhook=effective_webhook,
         )
 
         return TranscribeResponse(
@@ -435,6 +436,7 @@ async def recalibrate(
         task_id=task_id,
         user_agent=request.headers.get("User-Agent"),
         remote_ip=request.client.host if request.client else None,
+        wechat_webhook=effective_webhook,
     )
 
     return TranscribeResponse(

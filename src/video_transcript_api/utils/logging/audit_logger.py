@@ -16,7 +16,7 @@ from .logger import setup_logger
 logger = setup_logger("audit_logger")
 
 # Schema 版本号，每次表结构变更时递增
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 2
 
 
 class AuditLogger:
@@ -120,9 +120,8 @@ class AuditLogger:
         if version < 1:
             self._migrate_v1(cursor)
 
-        # 未来新增迁移在此添加：
-        # if version < 2:
-        #     self._migrate_v2(cursor)
+        if version < 2:
+            self._migrate_v2(cursor)
 
         if version < CURRENT_SCHEMA_VERSION:
             self._set_schema_version(cursor, CURRENT_SCHEMA_VERSION)
@@ -153,6 +152,16 @@ class AuditLogger:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_request_time ON api_audit_logs(request_time)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_endpoint ON api_audit_logs(endpoint)')
 
+    def _migrate_v2(self, cursor):
+        """v2 迁移：新增 wechat_webhook 列，用于记录任务提交时使用的通知 webhook 地址"""
+        logger.info("执行 schema 迁移 v2: 新增 wechat_webhook 列")
+        cursor.execute(
+            "ALTER TABLE api_audit_logs ADD COLUMN wechat_webhook TEXT"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_wechat_webhook ON api_audit_logs(wechat_webhook)"
+        )
+
     def _mask_api_key(self, api_key: str) -> str:
         """
         对API密钥进行脱敏处理
@@ -177,7 +186,8 @@ class AuditLogger:
                      status_code: Optional[int] = None,
                      task_id: Optional[str] = None,
                      user_agent: Optional[str] = None,
-                     remote_ip: Optional[str] = None) -> bool:
+                     remote_ip: Optional[str] = None,
+                     wechat_webhook: Optional[str] = None) -> bool:
         """
         记录API调用日志
 
@@ -191,6 +201,7 @@ class AuditLogger:
             task_id: 任务ID
             user_agent: 用户代理
             remote_ip: 客户端IP
+            wechat_webhook: 任务提交时使用的通知 webhook 地址（可选）
 
         Returns:
             bool: 记录是否成功
@@ -202,11 +213,11 @@ class AuditLogger:
                 cursor.execute('''
                     INSERT INTO api_audit_logs
                     (api_key_masked, user_id, endpoint, video_url, processing_time_ms,
-                     status_code, task_id, user_agent, remote_ip)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     status_code, task_id, user_agent, remote_ip, wechat_webhook)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     api_key_masked, user_id, endpoint, video_url, processing_time_ms,
-                    status_code, task_id, user_agent, remote_ip
+                    status_code, task_id, user_agent, remote_ip, wechat_webhook
                 ))
 
             logger.debug(f"API调用日志记录成功: {endpoint}, 用户: {user_id}")
