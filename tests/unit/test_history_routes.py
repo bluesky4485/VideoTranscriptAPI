@@ -369,6 +369,132 @@ class TestHistoryEndpoint:
 
 
 # ===========================================================================
+# GET /api/audit/history — search (q parameter)
+# ===========================================================================
+
+class TestHistorySearch:
+    """Tests for full-text search via ?q= parameter in /api/audit/history."""
+
+    def test_search_by_title_returns_match(self, history_client):
+        """q matching part of a title returns that task."""
+        client, setup = history_client
+        al = setup["audit_logger"]
+        insert = setup["insert_task"]
+
+        _log(al, "task-a"); _log(al, "task-b")
+        insert("task-a", "vt-a", title="Python 编程实战")
+        insert("task-b", "vt-b", title="JavaScript 入门教程")
+
+        resp = client.get("/api/audit/history?q=Python")
+        assert resp.status_code == 200
+        items = resp.json()["data"]["items"]
+        task_ids = {i["task_id"] for i in items}
+        assert "task-a" in task_ids
+        assert "task-b" not in task_ids
+
+    def test_search_by_author_returns_match(self, history_client):
+        """q matching part of author/channel name returns that task."""
+        client, setup = history_client
+        al = setup["audit_logger"]
+        insert = setup["insert_task"]
+
+        _log(al, "ta"); _log(al, "tb")
+        insert("ta", "vt-a", author="技术蛋老师")
+        insert("tb", "vt-b", author="李永乐老师")
+
+        resp = client.get("/api/audit/history?q=技术蛋")
+        assert resp.status_code == 200
+        task_ids = {i["task_id"] for i in resp.json()["data"]["items"]}
+        assert "ta" in task_ids
+        assert "tb" not in task_ids
+
+    def test_search_by_video_url_returns_match(self, history_client):
+        """q matching part of video_url returns that task."""
+        client, setup = history_client
+        al = setup["audit_logger"]
+        insert = setup["insert_task"]
+
+        # Insert audit record with specific URL
+        al.log_api_call(
+            api_key=_API_KEY, user_id="test-user", endpoint="/api/transcribe",
+            video_url="https://youtu.be/abc123xyz", status_code=202, task_id="task-url",
+            wechat_webhook=_WEBHOOK_A,
+        )
+        al.log_api_call(
+            api_key=_API_KEY, user_id="test-user", endpoint="/api/transcribe",
+            video_url="https://bilibili.com/video/BV999", status_code=202, task_id="task-other-url",
+            wechat_webhook=_WEBHOOK_A,
+        )
+        insert("task-url", "vt-url"); insert("task-other-url", "vt-other-url")
+
+        resp = client.get("/api/audit/history?q=abc123xyz")
+        assert resp.status_code == 200
+        task_ids = {i["task_id"] for i in resp.json()["data"]["items"]}
+        assert "task-url" in task_ids
+        assert "task-other-url" not in task_ids
+
+    def test_search_no_match_returns_empty(self, history_client):
+        """q that matches nothing returns empty list and total=0."""
+        client, setup = history_client
+        al = setup["audit_logger"]
+        insert = setup["insert_task"]
+
+        _log(al, "task-x")
+        insert("task-x", "vt-x", title="机器学习入门")
+
+        resp = client.get("/api/audit/history?q=不存在的关键词xyz")
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["items"] == []
+        assert data["total"] == 0
+
+    def test_search_empty_q_returns_all(self, history_client):
+        """q='' (empty string) behaves same as no q — returns all records."""
+        client, setup = history_client
+        al = setup["audit_logger"]
+        insert = setup["insert_task"]
+
+        _log(al, "t1"); _log(al, "t2")
+        insert("t1", "vt1"); insert("t2", "vt2")
+
+        resp = client.get("/api/audit/history?q=")
+        assert resp.status_code == 200
+        assert resp.json()["data"]["total"] == 2
+
+    def test_search_combined_with_platform_filter(self, history_client):
+        """q + platform together narrow results correctly."""
+        client, setup = history_client
+        al = setup["audit_logger"]
+        insert = setup["insert_task"]
+
+        _log(al, "yt"); _log(al, "bili")
+        insert("yt",   "vt-yt",   title="AI 教程", platform="youtube")
+        insert("bili", "vt-bili", title="AI 入门",  platform="bilibili")
+
+        resp = client.get("/api/audit/history?q=AI&platform=youtube")
+        assert resp.status_code == 200
+        task_ids = {i["task_id"] for i in resp.json()["data"]["items"]}
+        assert "yt" in task_ids
+        assert "bili" not in task_ids
+
+    def test_search_total_reflects_filtered_count(self, history_client):
+        """total in response equals the number of records matching q."""
+        client, setup = history_client
+        al = setup["audit_logger"]
+        insert = setup["insert_task"]
+
+        for i in range(3):
+            _log(al, f"match-{i}")
+            insert(f"match-{i}", f"vt-m{i}", title="深度学习")
+        _log(al, "nomatch")
+        insert("nomatch", "vt-nm", title="其他内容")
+
+        resp = client.get("/api/audit/history?q=深度学习")
+        assert resp.status_code == 200
+        assert resp.json()["data"]["total"] == 3
+
+
+# ===========================================================================
 # GET /api/audit/filter-options
 # ===========================================================================
 

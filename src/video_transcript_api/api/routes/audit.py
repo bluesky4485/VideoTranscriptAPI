@@ -67,6 +67,7 @@ async def get_history(
     webhook: Optional[str] = Query(None, description="webhook地址精确过滤"),
     platform: Optional[str] = Query(None, description="平台过滤: youtube/bilibili/xiaoyuzhou/xiaohongshu/douyin"),
     author: Optional[str] = Query(None, description="频道/作者精确过滤"),
+    q: Optional[str] = Query(None, description="关键词搜索：匹配标题、频道名、视频URL"),
     status: Optional[str] = Query(None, description="任务状态过滤，默认只显示 success（已完成）"),
     limit: int = Query(20, ge=1, le=100, description="每页条数"),
     offset: int = Query(0, ge=0, description="分页偏移"),
@@ -113,6 +114,15 @@ async def get_history(
     if effective_status != "all":
         cache_conditions.append("COALESCE(t.status, 'unknown') = ?")
         params.append(effective_status)
+
+    # 关键词搜索：LIKE 匹配标题、频道名、视频URL
+    # 注意：加入 cache_conditions 而非 conditions，保证 params 顺序与 SQL 占位符一致
+    if q and q.strip():
+        pattern = f"%{q.strip()}%"
+        cache_conditions.append(
+            "(COALESCE(t.title, '') LIKE ? OR COALESCE(t.author, '') LIKE ? OR COALESCE(a.video_url, '') LIKE ?)"
+        )
+        params.extend([pattern, pattern, pattern])
 
     where_clause = " AND ".join(conditions + cache_conditions)
 
