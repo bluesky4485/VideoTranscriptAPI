@@ -69,7 +69,7 @@ async def get_history(
     author: Optional[str] = Query(None, description="频道/作者精确过滤"),
     q: Optional[str] = Query(None, description="关键词搜索：匹配标题、频道名、视频URL"),
     status: Optional[str] = Query(None, description="任务状态过滤，默认只显示 success（已完成）"),
-    limit: int = Query(20, ge=1, le=100, description="每页条数"),
+    limit: int = Query(20, ge=1, le=10000, description="每页条数，客户端已读过滤时传大值"),
     offset: int = Query(0, ge=0, description="分页偏移"),
     user_info: dict = Depends(verify_token),
 ):

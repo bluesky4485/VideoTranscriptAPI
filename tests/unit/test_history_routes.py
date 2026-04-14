@@ -477,6 +477,18 @@ class TestHistorySearch:
         assert "yt" in task_ids
         assert "bili" not in task_ids
 
+    def test_large_limit_for_client_side_filtering(self, history_client):
+        """limit=10000 should be accepted (needed when client applies read filter)."""
+        client, setup = history_client
+        al = setup["audit_logger"]
+        insert = setup["insert_task"]
+
+        _log(al, "t1"); insert("t1", "vt1")
+
+        resp = client.get("/api/audit/history?limit=10000")
+        assert resp.status_code == 200
+        assert resp.json()["data"]["limit"] == 10000
+
     def test_search_total_reflects_filtered_count(self, history_client):
         """total in response equals the number of records matching q."""
         client, setup = history_client
