@@ -1039,19 +1039,23 @@ document.getElementById('apiKeyInput').addEventListener('keydown', e => {
     if (e.key === 'Enter') loadHistory(0);
 });
 
-// 搜索框：回车立即搜索，输入 500ms 防抖自动搜索
-let searchDebounce = null;
+// 过滤栏任意子元素 change → 实时写入 URL（冒泡监听，无需逐一绑定）
 document.addEventListener('DOMContentLoaded', () => {
+    const bar = document.getElementById('filterBar');
+    if (bar) bar.addEventListener('change', serializeFiltersToURL);
+
+    // 搜索框：回车立即搜索，输入 500ms 防抖自动搜索
     const qInput = document.getElementById('filterQ');
     if (!qInput) return;
     qInput.addEventListener('keydown', e => {
-        if (e.key === 'Enter') { clearTimeout(searchDebounce); loadHistory(0); }
+        if (e.key === 'Enter') { clearTimeout(searchDebounce); serializeFiltersToURL(); loadHistory(0); }
     });
     qInput.addEventListener('input', () => {
         clearTimeout(searchDebounce);
         searchDebounce = setTimeout(() => { serializeFiltersToURL(); loadHistory(0); }, 500);
     });
 });
+let searchDebounce = null;
 
 // ===================== 从主页 localStorage 读取 Token（与主页共用同一 Key）=====================
 function tryLoadMainPageToken() {
