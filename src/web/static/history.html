@@ -849,7 +849,8 @@ function updateAuthorDisplay() {
     }
 }
 
-// 点击外部关闭下拉
+// 点击下拉内部不关闭，点击外部才关闭
+document.getElementById('authorDropdown').addEventListener('click', e => e.stopPropagation());
 document.addEventListener('click', () => {
     if (_authorDropOpen) {
         document.getElementById('authorDropdown').style.display = 'none';
