@@ -112,14 +112,29 @@
         // ------------------------------------------------------
         // 校对模型配置
         // ------------------------------------------------------
+        // reasoning_effort 合法值（由 providers.py 按模型族翻译）：
+        //   null          - 不传参，用模型默认（DeepSeek V4/Gemini 3 默认已启用思考）
+        //   "disabled"    - 显式关闭思考（DeepSeek V4 发 extra_body.thinking.type=disabled;
+        //                                 Gemini 2.5 发 reasoning_effort=none; GPT-5/Gemini-3 回退到 minimal;
+        //                                 Gemini 3 Pro 关不掉，自动忽略并 warn）
+        //   "minimal"     - GPT-5 / Gemini 3 最低思考档；DeepSeek 会 clamp 到 low
+        //   "low"/"medium"/"high" - 三家通用
+        //   "max"/"xhigh" - DeepSeek V4 特有；其他服务商会 clamp 到 high
+        //   "none"        - 已弃用，启动时自动迁移到 "disabled" 并 warn
         "calibrate_model": "gpt-4.1-mini",      // 校对使用的模型
-        "calibrate_reasoning_effort": null,     // null=不支持思考, "none"=关闭思考, "low"/"medium"/"high"=思考级别
+        "calibrate_reasoning_effort": null,     // GPT-4.x 不支持 reasoning_effort，设任何值都会被 drop
 
         // ------------------------------------------------------
         // 总结模型配置
         // ------------------------------------------------------
-        "summary_model": "deepseek-chat",       // 总结使用的模型
-        "summary_reasoning_effort": "high",     // 总结推理强度
+        // 【DeepSeek 迁移提示】旧模型 deepseek-chat / deepseek-reasoner 将于 2026-07-24 弃用。
+        //   - deepseek-chat     → deepseek-v4-flash + reasoning_effort="disabled"（非思考）
+        //   - deepseek-reasoner → deepseek-v4-flash + reasoning_effort="high"（思考）
+        //   注意：旧 deepseek-chat 不支持 reasoning_effort（被服务端忽略），
+        //         迁移到 v4-flash 后 "disabled" 会真正关闭思考，"high" 会真正触发思考。
+        //         延迟和 token 成本会上升（思考模式），请按任务重要性选择级别。
+        "summary_model": "deepseek-v4-flash",   // 总结使用的模型
+        "summary_reasoning_effort": "high",     // 总结推理强度（v4-flash 下触发思考模式）
 
         // ------------------------------------------------------
         // 风险内容模型配置
@@ -197,6 +212,20 @@
         },
 
         // ------------------------------------------------------
+        // Provider 识别自定义规则（可选）
+        // 用于反向代理用户覆盖默认模型名识别，比如网关把模型改名了
+        // 格式：dict of "pattern" -> "family" 或 list of [pattern, family]
+        // 合法 family: deepseek / gemini_25 / gemini_3 / gemini / openai_gpt5
+        //             openai_gpt4 / openai_o / openai
+        // 这些规则优先于内置默认表，默认表作为 fallback
+        // 留空或删除此字段 = 只用内置默认
+        // ------------------------------------------------------
+        // "provider_patterns": {
+        //     "dsproxy-*": "deepseek",        // 代理把 deepseek 改名的情况
+        //     "mygateway-v4-*": "deepseek"
+        // },
+
+        // ------------------------------------------------------
         // JSON 结构化输出配置
         // 用于控制 LLM 的 JSON 输出模式
         // ------------------------------------------------------
@@ -205,7 +234,7 @@
             // 匹配顺序：从前到后，首次匹配生效
             // 可选值：json_schema（严格模式）、json_object（兼容模式）
             "mode_by_model": {
-                "deepseek*": "json_object",     // DeepSeek 系列不支持 json_schema
+                "deepseek*": "json_object",     // DeepSeek 系列（含 v4-flash / v4-pro）暂不支持 json_schema
                 "qwen*": "json_object",         // 通义千问部分支持
                 "glm*": "json_object",          // 智谱 GLM 系列
                 "*": "json_schema"              // 其他模型使用严格模式

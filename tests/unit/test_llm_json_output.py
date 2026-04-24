@@ -40,9 +40,9 @@ class TestGetJsonModeForModel:
             }
         }
 
-        assert _get_json_mode_for_model("deepseek-chat", config) == "json_object"
-        assert _get_json_mode_for_model("deepseek-coder", config) == "json_object"
-        assert _get_json_mode_for_model("DEEPSEEK-CHAT", config) == "json_object"
+        assert _get_json_mode_for_model("deepseek-v4-flash", config) == "json_object"
+        assert _get_json_mode_for_model("deepseek-v4-pro", config) == "json_object"
+        assert _get_json_mode_for_model("DEEPSEEK-V4-FLASH", config) == "json_object"
 
     def test_gpt_uses_json_schema(self):
         """GPT models should use json_schema mode."""
@@ -94,7 +94,7 @@ class TestGetJsonModeForModel:
             }
         }
 
-        assert _get_json_mode_for_model("deepseek-chat", config) == "json_schema"
+        assert _get_json_mode_for_model("deepseek-v4-flash", config) == "json_schema"
 
     def test_empty_config_uses_json_schema(self):
         """Empty config should default to json_schema."""
@@ -107,7 +107,7 @@ class TestGetJsonModeForModel:
             "llm": {
                 "json_output": {
                     "mode_by_model": {
-                        "deepseek-chat": "json_object",
+                        "deepseek-v4-flash": "json_object",
                         "deepseek*": "json_schema",
                         "*": "json_schema"
                     },
@@ -116,8 +116,8 @@ class TestGetJsonModeForModel:
             }
         }
 
-        assert _get_json_mode_for_model("deepseek-chat", config) == "json_object"
-        assert _get_json_mode_for_model("deepseek-coder", config) == "json_schema"
+        assert _get_json_mode_for_model("deepseek-v4-flash", config) == "json_object"
+        assert _get_json_mode_for_model("deepseek-v4-pro", config) == "json_schema"
 
 
 class TestValidateRequiredFields:

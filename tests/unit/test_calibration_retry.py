@@ -112,7 +112,7 @@ class TestSelfCorrectionSmartBehavior:
 
         with pytest.raises(LLMCallError, match="timeout"):
             _call_with_json_object_mode(
-                model="deepseek-chat",
+                model="deepseek-v4-flash",
                 prompt="test prompt",
                 schema={"type": "object", "properties": {}, "required": []},
                 api_key="test-key",
@@ -142,7 +142,7 @@ class TestSelfCorrectionSmartBehavior:
 
         with pytest.raises(LLMCallError, match="[Cc]onnection"):
             _call_with_json_object_mode(
-                model="deepseek-chat",
+                model="deepseek-v4-flash",
                 prompt="test",
                 schema={"type": "object", "properties": {}, "required": []},
                 api_key="test-key",
@@ -179,7 +179,7 @@ class TestSelfCorrectionSmartBehavior:
 
         with pytest.raises(LLMCallError, match="[Tt]runcated"):
             _call_with_json_object_mode(
-                model="deepseek-chat",
+                model="deepseek-v4-flash",
                 prompt="test",
                 schema={
                     "type": "object",
@@ -225,7 +225,7 @@ class TestSelfCorrectionSmartBehavior:
         config = {"llm": {"json_output": {"max_retries": 2}}}
 
         result = _call_with_json_object_mode(
-            model="deepseek-chat",
+            model="deepseek-v4-flash",
             prompt="test",
             schema={
                 "type": "object",
@@ -271,7 +271,7 @@ class TestMaxRetriesParameterRespect:
         config = {"llm": {"json_output": {"max_retries": 5}}}  # config says 5
 
         result = _call_with_json_object_mode(
-            model="deepseek-chat",
+            model="deepseek-v4-flash",
             prompt="test",
             schema={
                 "type": "object",
@@ -307,7 +307,7 @@ class TestMaxRetriesParameterRespect:
         config = {"llm": {"json_output": {"max_retries": 1}}}
 
         result = _call_with_json_object_mode(
-            model="deepseek-chat",
+            model="deepseek-v4-flash",
             prompt="test",
             schema={
                 "type": "object",
@@ -361,7 +361,7 @@ class TestLLMClientDifferentiatedRetry:
 
             with pytest.raises(TruncationError):
                 client.call(
-                    model="deepseek-chat",
+                    model="deepseek-v4-flash",
                     system_prompt="test",
                     user_prompt="test",
                     task_type="calibrate_chunk",
@@ -382,7 +382,7 @@ class TestLLMClientDifferentiatedRetry:
 
             with pytest.raises(LLMTimeoutError):
                 client.call(
-                    model="deepseek-chat",
+                    model="deepseek-v4-flash",
                     system_prompt="test",
                     user_prompt="test",
                     task_type="calibrate_chunk",
@@ -401,7 +401,7 @@ class TestLLMClientDifferentiatedRetry:
 
             with pytest.raises(Exception):
                 client.call(
-                    model="deepseek-chat",
+                    model="deepseek-v4-flash",
                     system_prompt="test",
                     user_prompt="test",
                     task_type="calibrate_chunk",

@@ -113,7 +113,7 @@ def test_structured_output_json_object():
     set_default_config(config)
 
     # Use DeepSeek model (should use json_object mode)
-    model = llm_config.get('summary_model', 'deepseek-chat')
+    model = llm_config.get('summary_model', 'deepseek-v4-flash')
 
     # Check if it's a DeepSeek model
     if 'deepseek' not in model.lower():

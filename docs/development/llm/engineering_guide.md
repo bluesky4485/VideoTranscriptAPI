@@ -38,7 +38,7 @@ providers:
   deepseek:
     base_url: "https://api.deepseek.com/v1"
     api_key: "${DEEPSEEK_API_KEY}"
-    default_model: "deepseek-chat"
+    default_model: "deepseek-v4-flash"
 
   local:
     base_url: "http://localhost:8080/v1"
@@ -455,217 +455,177 @@ print(result.title, result.date)
 
 ## 4. Reasoning Effort 配置
 
-### 4.1 功能原理
+### 4.1 2026 API 现状
 
-新一代推理模型（如 Gemini 2.5、OpenAI o1/o3 系列）支持 **Thinking（思考）** 功能，模型会在输出前进行深度推理，从而提升复杂任务的准确性。
+2026 年三家主流服务商的 thinking API **大幅收敛**：
 
-OpenAI 兼容 API 提供 `reasoning_effort` 参数来控制思考强度：
+| 服务商 | 合法 `reasoning_effort` | 关闭思考方式 | 默认 |
+|--------|-------------------------|-------------|------|
+| OpenAI GPT-5.x | `minimal`/`low`/`medium`/`high` | 只能 `minimal`（关不掉） | `medium` |
+| OpenAI GPT-4.x | （不支持） | 不思考 | — |
+| OpenAI o-series | `low`/`medium`/`high` | （关不掉） | enabled |
+| Gemini 2.5 | `none`/`low`/`medium`/`high` | `reasoning_effort: "none"` | enabled |
+| Gemini 3.x (OpenAI-compat) | `minimal`/`low`/`medium`/`high` | `minimal`（Pro 关不掉） | `high` |
+| DeepSeek V4 | `low`/`medium`/`high`/`max`/`xhigh` | `extra_body.thinking.type=disabled` | `enabled@high` |
 
-| 级别 | Token 预算 | 适用场景 |
-|------|-----------|----------|
-| `"low"` | ~1,024 tokens | 简单任务、低延迟场景 |
-| `"medium"` | ~8,192 tokens | 中等复杂度任务 |
-| `"high"` | ~24,576 tokens | 复杂推理、数学证明、代码生成 |
-| `"none"` | 0 | 禁用思考（部分模型不支持关闭）|
+收敛点：三家在 2026 都支持 `minimal`（低延迟场景）。分化点：DeepSeek 有独家 `max/xhigh` + 独特的 thinking 开关字段。
 
-**注意**：
-- 思考 tokens 会计入用量，增加成本
-- Gemini 2.5 Pro 等模型不支持完全关闭思考
-- 不同厂商的实现可能略有差异
+### 4.2 多状态配置设计
 
-### 4.2 三态配置设计
+项目用单字段 `reasoning_effort`，由 `src/video_transcript_api/llm/providers.py` 按模型族翻译：
 
-为兼容不同模型的能力差异，配置使用三态值：
+| 配置值 | 语义 | 请求行为 |
+|--------|------|---------|
+| `null` | 未设置，沿用 provider 默认 | payload 不加任何 thinking 字段 |
+| `"disabled"` | **显式关闭思考** | DeepSeek → `extra_body.thinking.type="disabled"`；Gemini 2.5 → `reasoning_effort="none"`；GPT-5/Gemini-3 → 回退到 `minimal`；Gemini 3 Pro → warn 并丢弃 |
+| `"minimal"` | GPT-5/Gemini-3 最低档 | 相应 provider 透传；DeepSeek 没这值，clamp 到 `low` |
+| `"low"` / `"medium"` / `"high"` | 三家通用 | 原样透传（GPT-4.x 丢弃并 warn） |
+| `"max"` / `"xhigh"` | DeepSeek 独有 | DeepSeek 透传；其他 clamp 到 `"high"` + warn |
 
-| 配置值 | 含义 | API 请求行为 |
-|--------|------|-------------|
-| `null` | 模型不支持此参数 | 请求中 **不携带** `reasoning_effort` 字段 |
-| `"none"` | 模型支持但关闭思考 | 请求中携带 `"reasoning_effort": "none"` |
-| `"low"` / `"medium"` / `"high"` | 启用对应级别思考 | 请求中携带对应值 |
+**关键差异（与老架构相比）**：老单字段 `null`/`"none"`/强度的三态设计，把"默认"和"禁用"压成一个 `None` 状态。升级到 DeepSeek V4 会让 Gemini 2.5 旧用户的"关闭思考"**静默变为"默认开启"**。2026 起显式区分 `null`（默认）和 `"disabled"`（关闭），由 provider 翻译层消化差异。
 
-**为什么需要 `null`？**
-
-某些模型（如 GPT-4o、DeepSeek）不支持 `reasoning_effort` 参数。如果强行传入，可能导致：
-- API 返回错误
-- 参数被忽略但产生警告
-- 行为不可预期
-
-因此，配置中的 `null` 表示"此模型不支持，跳过该参数"。
+**legacy 兼容**：
+- `"none"` 自动归一到 `"disabled"`（保留用户意图），同时 emit deprecation warn
+- `"null"` / `""` / 空白 → `None`（默认）
+- 未知字符串 → `None` + warn
 
 ### 4.3 配置文件示例
-
-```yaml
-# config/llm.yaml
-llm:
-  # 校对任务配置
-  calibrate_model: "gpt-4.1-mini"
-  calibrate_reasoning_effort: null      # GPT-4.1 不支持 reasoning
-
-  # 总结任务配置
-  summary_model: "gemini-2.5-flash"
-  summary_reasoning_effort: "high"      # 总结需要深度思考
-
-  # 风险内容处理（自动切换模型）
-  risk_calibrate_model: "gpt-4o-mini"
-  risk_calibrate_reasoning_effort: null
-  risk_summary_model: "gemini-2.5-pro"
-  risk_summary_reasoning_effort: "medium"
-
-  # 质量验证器
-  validator_model: "deepseek-chat"
-  validator_reasoning_effort: null      # DeepSeek 不支持
-```
-
-**JSON 格式**：
 
 ```jsonc
 {
   "llm": {
     "calibrate_model": "gpt-4.1-mini",
-    "calibrate_reasoning_effort": null,     // null = 不携带参数
+    "calibrate_reasoning_effort": null,       // GPT-4.x 不支持，任何值都会被 drop
 
-    "summary_model": "gemini-2.5-flash",
-    "summary_reasoning_effort": "high",     // 启用高强度思考
+    "summary_model": "deepseek-v4-flash",
+    "summary_reasoning_effort": "high",       // v4-flash 真正触发思考
 
-    "validator_model": "deepseek-chat",
-    "validator_reasoning_effort": null      // DeepSeek 不支持
+    "validator_model": "deepseek-v4-flash",
+    "validator_reasoning_effort": "disabled", // 显式关闭思考，低成本验证
+
+    // 可选：用自定义模型名覆盖默认识别
+    "provider_patterns": {
+      "dsproxy-*": "deepseek"
+    }
   }
 }
 ```
 
-### 4.4 代码实现
+### 4.4 代码调用
+
+**Payload 构建点统一调 `providers.build_request_payload`**：
 
 ```python
-# llm/client.py
-from typing import Optional, Literal
+# llm/llm.py
+from . import providers
 
-ReasoningEffort = Literal["none", "low", "medium", "high"]
-
-class LLMClient:
-    def chat(
-        self,
-        messages: list[dict],
-        model: str | None = None,
-        reasoning_effort: Optional[ReasoningEffort] = None,  # None 表示不支持
-        **kwargs
-    ) -> str:
-        """
-        发送聊天请求
-
-        Args:
-            messages: 消息列表
-            model: 模型名称
-            reasoning_effort: 推理强度
-                - None: 模型不支持此参数，请求中不携带
-                - "none": 模型支持但禁用思考
-                - "low"/"medium"/"high": 启用对应级别思考
-        """
-        payload = {
-            "model": model or self.config.model,
-            "messages": messages,
-            "temperature": kwargs.get("temperature", self.config.temperature),
-            "max_tokens": kwargs.get("max_tokens", self.config.max_tokens),
-        }
-
-        # 关键：只有当 reasoning_effort 不为 None 时才添加参数
-        if reasoning_effort is not None:
-            payload["reasoning_effort"] = reasoning_effort
-
-        response = self.client.post("/chat/completions", json=payload)
-        response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"]
+base_payload = {
+    "model": model,
+    "messages": [...],
+    "stream": False,
+}
+# build_request_payload 内部：
+# 1. detect_provider(model) 按 fnmatch 识别族
+# 2. _translate(family, effort) 生成 thinking 字段
+# 3. _deep_merge(base, translation) 合并，保留已有 extra_body
+data = providers.build_request_payload(model, reasoning_effort, base_payload)
 ```
 
-### 4.5 配置加载与使用
+**日志描述从最终 payload 派生**（保证真实）：
 
 ```python
-# llm/config.py
-from dataclasses import dataclass
-from typing import Optional, Literal
-
-ReasoningEffort = Optional[Literal["none", "low", "medium", "high"]]
-
-@dataclass
-class TaskConfig:
-    """单个任务的 LLM 配置"""
-    model: str
-    reasoning_effort: ReasoningEffort = None  # None = 不支持
-
-@dataclass
-class LLMConfig:
-    """完整 LLM 配置"""
-    calibrate: TaskConfig
-    summary: TaskConfig
-    risk_calibrate: TaskConfig
-    risk_summary: TaskConfig
-    validator: TaskConfig
-
-
-def load_llm_config(config: dict) -> LLMConfig:
-    """从配置字典加载 LLM 配置"""
-    llm = config.get("llm", {})
-
-    return LLMConfig(
-        calibrate=TaskConfig(
-            model=llm.get("calibrate_model", "gpt-4o"),
-            reasoning_effort=llm.get("calibrate_reasoning_effort"),  # 保留 None
-        ),
-        summary=TaskConfig(
-            model=llm.get("summary_model", "gpt-4o"),
-            reasoning_effort=llm.get("summary_reasoning_effort"),
-        ),
-        risk_calibrate=TaskConfig(
-            model=llm.get("risk_calibrate_model", ""),
-            reasoning_effort=llm.get("risk_calibrate_reasoning_effort"),
-        ),
-        risk_summary=TaskConfig(
-            model=llm.get("risk_summary_model", ""),
-            reasoning_effort=llm.get("risk_summary_reasoning_effort"),
-        ),
-        validator=TaskConfig(
-            model=llm.get("validator_model", ""),
-            reasoning_effort=llm.get("validator_reasoning_effort"),
-        ),
-    )
-
-
-# 使用示例
-config = load_llm_config(app_config)
-client = LLMClient()
-
-# 校对任务（不支持 reasoning）
-result = client.chat(
-    messages,
-    model=config.calibrate.model,
-    reasoning_effort=config.calibrate.reasoning_effort,  # None
+desc = providers.describe_from_payload(data)
+logger.info(
+    f"[{task_type}] Model: {desc['model']} ({desc['provider']}) | "
+    f"Thinking: {desc['thinking_mode']}"
 )
+# 输出：[SUMMARY] Model: deepseek-v4-flash (deepseek) | Thinking: high
+```
 
-# 总结任务（启用高强度思考）
-result = client.chat(
-    messages,
-    model=config.summary.model,
-    reasoning_effort=config.summary.reasoning_effort,  # "high"
+### 4.5 启动日志与配置校验
+
+项目启动时（`api/app.py:startup_event`）自动扫描 `llm.*_model` 字段，打印每个任务的摘要：
+
+```
+[LLM] calibrate: gpt-4.1-mini (openai_gpt4) | thinking=n/a(model_default)
+[LLM] summary:   deepseek-v4-flash (deepseek) | thinking=high(reasoning_effort)
+[LLM] validator: deepseek-v4-flash (deepseek) | thinking=disabled(extra_body.thinking)
+[LLM] risk_summary: gemini-2.5-flash (gemini_25) | thinking=medium(reasoning_effort)
+```
+
+任何不兼容组合会在启动时立刻 warn（如 `gpt-4o + reasoning_effort=high` → 参数会被丢弃），不必等运行时才看到 400。
+
+### 4.6 DeepSeek 模型迁移（2026-07-24 弃用节点）
+
+旧模型 `deepseek-chat` / `deepseek-reasoner` 将于 2026-07-24 停服，统一迁移到 `deepseek-v4-flash`：
+
+| 旧模型 | 新配置 |
+|--------|--------|
+| `deepseek-chat` | `deepseek-v4-flash` + `reasoning_effort: "disabled"` |
+| `deepseek-reasoner` | `deepseek-v4-flash` + `reasoning_effort: "high"` |
+
+**静默行为变化警告**：旧 `deepseek-chat` 不支持 `reasoning_effort`（被服务端忽略），而 `v4-flash` **真正响应**该参数。升级后：
+- 如果原配置 `deepseek-chat + "high"` → 思考模式会实际触发，延迟和 token 成本明显上升
+- 如果原配置 `deepseek-reasoner + null` → 改 v4-flash 后 `null` 会退化为默认（仍开思考），行为一致
+
+### 4.7 如何添加新 provider（OSS 贡献指南）
+
+想给项目加 Claude / Qwen3 / 豆包等新 provider 的 thinking 支持，按以下步骤：
+
+**步骤 1**：在 `src/video_transcript_api/llm/providers.py` 的 `_DEFAULT_PROVIDER_PATTERNS` 里加一条 fnmatch 规则（顺序敏感，具体的放前面）：
+
+```python
+_DEFAULT_PROVIDER_PATTERNS = (
+    # ...
+    ("claude-*", "anthropic"),  # 新增
+    # ...
 )
 ```
 
-### 4.6 模型兼容性速查表
+**步骤 2**：在 `_FAMILY_CAPABILITIES` 里声明新 family 的能力：
 
-| 模型系列 | 支持 reasoning_effort | 备注 |
-|----------|----------------------|------|
-| Gemini 2.5 Flash | ✅ | 支持 `"none"` 关闭 |
-| Gemini 2.5 Pro | ✅ | 不支持 `"none"`，思考无法完全关闭 |
-| OpenAI o1 / o3 | ✅ | 原生支持 |
-| GPT-4o / GPT-4.1 | ❌ | 使用 `null` 跳过参数 |
-| DeepSeek Chat | ❌ | 使用 `null` 跳过参数 |
-| Claude 3.5 | ❌ | 使用 `null` 跳过参数 |
-| Qwen 系列 | ❌ | 使用 `null` 跳过参数 |
+```python
+_FAMILY_CAPABILITIES = {
+    # ...
+    "anthropic": {
+        "disable_mode": "native",       # 或 effort_none/minimal_fallback/unsupported/na
+        "efforts": frozenset({"low", "medium", "high"}),
+        "min_effort": "low",
+        "max_effort": "high",
+    },
+}
+```
+
+**步骤 3**：如果 `disable_mode="native"` 且翻译逻辑特殊（比如 Anthropic 的 `extended_thinking` 用不同字段），扩展 `_translate()` 的 `"native"` 分支：
+
+```python
+def _translate(family, effort):
+    if effort == "disabled":
+        if family == "anthropic":
+            return {"extra_body": {"thinking": {"type": "disabled"}}}  # 或其他字段
+        # ...
+```
+
+**步骤 4**：在 `tests/unit/test_providers.py` 加一个 `TestBuildRequestPayloadAnthropic` 类，覆盖：
+- `disabled`、`low`/`medium`/`high`、`None` 的翻译结果
+- 已有 `extra_body` 的深合并 regression 测试
+- 日志只输出白名单字段
+
+**步骤 5**：在本文档 §4.1 兼容性表增加一行，在 §4.7 下方（此处）**不用更新**。
+
+**贡献者检查清单**：
+- [ ] `_DEFAULT_PROVIDER_PATTERNS` 加入，顺序正确
+- [ ] `_FAMILY_CAPABILITIES` 声明 `disable_mode` + `efforts` + `min/max_effort`
+- [ ] `_translate()` 如需特殊逻辑已扩展
+- [ ] 测试矩阵覆盖全部 effort 值 + regression
+- [ ] §4.1 兼容性表更新
 
 **日志示例**：
 
 ```
-2024-03-15 14:23:01 | INFO | [CALIBRATE] Model: gpt-4.1-mini | Reasoning: disabled
-2024-03-15 14:23:03 | INFO | [SUMMARY] Model: gemini-2.5-flash | Reasoning: high
-2024-03-15 14:23:05 | INFO | [VALIDATE] Model: deepseek-chat | Reasoning: disabled
+2026-04-24 04:13:47 | INFO  | [LLM] calibrate: gpt-4.1-mini (openai_gpt4) | thinking=n/a(model_default)
+2026-04-24 04:13:47 | INFO  | [LLM] summary: deepseek-v4-flash (deepseek) | thinking=high(reasoning_effort)
+2026-04-24 04:13:47 | WARN  | Provider family 'openai_gpt4' does not support reasoning_effort; dropping value 'high'.
 ```
 
 ---

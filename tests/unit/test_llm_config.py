@@ -66,14 +66,14 @@ class TestLLMConfigFromDict:
             "llm": {
                 "api_key": "test-key",
                 "base_url": "https://api.test.com",
-                "calibrate_model": "deepseek-chat",
-                "summary_model": "deepseek-reasoner",
+                "calibrate_model": "deepseek-v4-flash",
+                "summary_model": "deepseek-v4-pro",
             }
         }
         config = LLMConfig.from_dict(config_dict)
         assert config.api_key == "test-key"
-        assert config.calibrate_model == "deepseek-chat"
-        assert config.summary_model == "deepseek-reasoner"
+        assert config.calibrate_model == "deepseek-v4-flash"
+        assert config.summary_model == "deepseek-v4-pro"
 
     def test_with_risk_models(self):
         """Should parse risk model configuration."""

@@ -38,7 +38,7 @@ python tests/llm/run_validation_scoring_test.py --serial
 
 1. **强制启用质量验证**：`structured_calibration.quality_validation.enabled = True`
 2. **串行执行**：`calibration_concurrent_limit = 1`（确保打分结果顺序正确）
-3. **使用配置中的验证模型**：默认为 `deepseek-chat`
+3. **使用配置中的验证模型**：默认为 `deepseek-v4-flash`
 
 ## 输出内容
 
@@ -89,7 +89,7 @@ Pass rate with different overall_score thresholds:
     "num_segments": 30,
     "platform": "xiaoyuzhou",
     "media_id": "69788224cbeabe94f34495af",
-    "validator_model": "deepseek-chat",
+    "validator_model": "deepseek-v4-flash",
     "overall_score_threshold": 8.0,
     "minimum_single_score": 7.0
   },

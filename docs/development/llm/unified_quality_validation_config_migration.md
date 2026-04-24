@@ -25,7 +25,7 @@
             },
             "enable_validation": false,
             "fallback_to_original": true,
-            "validator_model": "deepseek-chat",
+            "validator_model": "deepseek-v4-flash",
             "validator_reasoning_effort": null,
             "risk_validator_model": "gpt-4.1-mini",
             "risk_validator_reasoning_effort": null
@@ -163,7 +163,7 @@ cp config/config.jsonc config/config.jsonc.backup.$(date +%Y%m%d)
     // "quality_threshold": { ... },
     // "enable_validation": false,
     // "fallback_to_original": true,
-    // "validator_model": "deepseek-chat",
+    // "validator_model": "deepseek-v4-flash",
     // "validator_reasoning_effort": null,
     // "risk_validator_model": "gpt-4.1-mini",
     // "risk_validator_reasoning_effort": null
@@ -204,7 +204,7 @@ uv run python main.py --start
 "structured_calibration": {
     "enable_validation": true,
     "fallback_to_original": false,
-    "validator_model": "deepseek-chat",
+    "validator_model": "deepseek-v4-flash",
     "quality_threshold": {
         "overall_score": 8.0,
         "minimum_single_score": 7.0
@@ -265,7 +265,7 @@ uv run python main.py --start
 ```jsonc
 "structured_calibration": {
     "enable_validation": true,
-    "validator_model": "deepseek-chat",
+    "validator_model": "deepseek-v4-flash",
     "risk_validator_model": "gpt-4.1-mini"
 }
 ```

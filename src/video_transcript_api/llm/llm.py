@@ -663,7 +663,7 @@ def call_llm_api(
         base_url: API 基础 URL
         max_retries: API 调用最大重试次数，默认 2
         retry_delay: 重试间隔秒数，默认 5
-        reasoning_effort: 推理强度 ("none", "low", "medium", "high")
+        reasoning_effort: 推理强度 (None / "disabled" / "minimal" / "low" / "medium" / "high" / "max" / "xhigh")；由 providers.py 按模型族翻译
         task_type: 任务类型，用于日志追踪
         response_schema: JSON Schema 定义（传入则启用结构化输出）
         config: 配置字典（可选，不传则使用 set_default_config 设置的默认配置）

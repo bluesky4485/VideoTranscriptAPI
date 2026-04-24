@@ -82,7 +82,7 @@
 #
 # 示例配置：
 #   {"deepseek*": "json_object", "qwen*": "json_object", "*": "json_schema"}
-#   - deepseek-chat -> json_object
+#   - deepseek-v4-flash -> json_object
 #   - qwen-turbo -> json_object
 #   - gpt-4o -> json_schema
 #   - claude-3-5-sonnet -> json_schema
@@ -109,7 +109,7 @@ ENABLE_JSON_MODE_FALLBACK=true
 
 ```json
 {
-  "deepseek*": "json_object",    // deepseek-chat, deepseek-coder 等
+  "deepseek*": "json_object",    // deepseek-v4-flash, deepseek-v4-pro 等
   "qwen*": "json_object",        // qwen-turbo, qwen-plus 等
   "glm*": "json_object",         // glm-4, glm-3-turbo 等
   "*": "json_schema"             // 其他所有模型使用 json_schema
@@ -158,14 +158,14 @@ class Settings(BaseSettings):
         匹配规则：按配置顺序从前到后匹配，首次匹配生效。
 
         Args:
-            model_name: 模型名称（如 "deepseek-chat", "gpt-4o"）
+            model_name: 模型名称（如 "deepseek-v4-flash", "gpt-4o"）
 
         Returns:
             str: JSON 输出模式，"json_schema" 或 "json_object"
 
         Example:
             配置: {"deepseek*": "json_object", "*": "json_schema"}
-            - "deepseek-chat" -> "json_object"
+            - "deepseek-v4-flash" -> "json_object"
             - "gpt-4o" -> "json_schema"
         """
         # 如果禁用了降级功能，始终返回 json_schema
