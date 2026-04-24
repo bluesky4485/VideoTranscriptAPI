@@ -33,6 +33,8 @@ import fnmatch
 import logging
 from typing import Any, Dict, Optional, Tuple
 
+# 用 stdlib logging 以便 pytest caplog 捕获；生产环境由 logger.py 的
+# InterceptHandler 把这些 record 转发到 loguru sink
 logger = logging.getLogger(__name__)
 
 # 顺序敏感：首个匹配命中即返回。更具体的 pattern 必须放在更通用 pattern 之前。

@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 from pathlib import Path
@@ -12,6 +13,26 @@ except ImportError:
 _logger_configured = False
 # 全局配置缓存
 _config_cache = None
+
+
+class _InterceptHandler(logging.Handler):
+    """把 stdlib logging record 转发到 loguru，保留级别/异常信息。"""
+
+    def emit(self, record: logging.LogRecord) -> None:  # pragma: no cover
+        try:
+            level = logger.level(record.levelname).name
+        except (ValueError, AttributeError):
+            level = record.levelno
+
+        # 跳过 logging 内部的帧，尽量定位到真实调用点
+        frame, depth = logging.currentframe(), 2
+        while frame and frame.f_code.co_filename == logging.__file__:
+            frame = frame.f_back
+            depth += 1
+
+        logger.opt(depth=depth, exception=record.exc_info).log(
+            level, record.getMessage()
+        )
 
 # 加载配置文件
 def load_config():
@@ -75,6 +96,10 @@ def setup_logger(name=None, config=None):
 
     # 移除默认的 handler
     logger.remove()
+
+    # 把 stdlib logging 的 record 转发到 loguru sink
+    # （让第三方模块或本项目内用 logging.getLogger() 的代码也能被统一格式化）
+    logging.basicConfig(handlers=[_InterceptHandler()], level=0, force=True)
 
     # 添加控制台处理程序
     logger.add(
