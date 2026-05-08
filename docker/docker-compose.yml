@@ -16,6 +16,7 @@ services:
       - ../config:/app/config
       # Persistent data: cache, logs, transcription results
       - ../data:/app/data
+    mem_limit: 2g
     restart: unless-stopped
     logging:
       driver: json-file

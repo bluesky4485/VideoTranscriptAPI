@@ -13,7 +13,12 @@ COPY --from=mwader/static-ffmpeg:latest /ffprobe /usr/local/bin/ffprobe
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     unzip \
+    libjemalloc2 \
     && rm -rf /var/lib/apt/lists/*
+
+# jemalloc: 替代 glibc malloc，主动归还空闲内存给 OS，
+# 避免长跑后 RSS 因 arena 碎片居高不下
+ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
 
 # ============================================================
 # 3. BBDown: download Linux build from GitHub Release
