@@ -18,12 +18,24 @@ class TestSummaryE2ESimple(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        """Set up test class - load config"""
+        """Set up test class - load config and initialize LLM client"""
         try:
             cls.config = get_config()
             cls.cache_dir = "./data/cache"
         except Exception as e:
             raise unittest.SkipTest(f"Failed to load config: {e}")
+
+        from video_transcript_api.llm import set_default_config
+        try:
+            set_default_config(cls.config)
+        except Exception as e:
+            raise unittest.SkipTest(f"Failed to initialize LLM client: {e}")
+
+        from video_transcript_api.llm.llm import get_sync_client
+        try:
+            get_sync_client()
+        except RuntimeError:
+            raise unittest.SkipTest("SyncLLMClient not initialized (missing API credentials)")
 
     def test_short_text_summary(self):
         """Test summary generation with short text"""

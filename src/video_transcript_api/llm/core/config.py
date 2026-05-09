@@ -30,14 +30,6 @@ class LLMConfig:
     validator_model: Optional[str] = None  # 默认使用 calibrate_model
     validator_reasoning_effort: Optional[str] = None
 
-    # 风险模型配置
-    risk_calibrate_model: Optional[str] = None
-    risk_calibrate_reasoning_effort: Optional[str] = None
-    risk_summary_model: Optional[str] = None
-    risk_summary_reasoning_effort: Optional[str] = None
-    risk_validator_model: Optional[str] = None
-    risk_validator_reasoning_effort: Optional[str] = None
-
     # 重试配置
     max_retries: int = 3
     retry_delay: int = 5
@@ -84,9 +76,6 @@ class LLMConfig:
     # 质量阈值
     overall_score_threshold: float = 8.0
     minimum_single_score: float = 7.0
-
-    # 风控配置
-    enable_risk_model_selection: bool = False
 
     # llm-compat 集成配置
     content_fallbacks: Optional[Dict[str, List[str]]] = None
@@ -184,20 +173,6 @@ class LLMConfig:
                 calibration_config.get("validator_reasoning_effort")
             ),
 
-            # 风险模型
-            risk_calibrate_model=llm_config.get("risk_calibrate_model"),
-            risk_calibrate_reasoning_effort=normalize_reasoning_effort(
-                llm_config.get("risk_calibrate_reasoning_effort")
-            ),
-            risk_summary_model=llm_config.get("risk_summary_model"),
-            risk_summary_reasoning_effort=normalize_reasoning_effort(
-                llm_config.get("risk_summary_reasoning_effort")
-            ),
-            risk_validator_model=calibration_config.get("risk_validator_model"),
-            risk_validator_reasoning_effort=normalize_reasoning_effort(
-                calibration_config.get("risk_validator_reasoning_effort")
-            ),
-
             # 重试配置
             max_retries=llm_config.get("max_retries", 3),
             retry_delay=llm_config.get("retry_delay", 5),
@@ -237,11 +212,6 @@ class LLMConfig:
             overall_score_threshold=quality_config.get("overall_score", 8.0),
             minimum_single_score=quality_config.get("minimum_single_score", 7.0),
 
-            # 风控配置
-            enable_risk_model_selection=llm_config.get(
-                "enable_risk_model_selection", False
-            ),
-
             # llm-compat 集成
             content_fallbacks=llm_config.get("content_fallbacks"),
             collector_url=llm_config.get("collector_url"),
@@ -251,32 +221,17 @@ class LLMConfig:
             total_timeout=float(llm_config.get("total_timeout", 300.0)),
         )
 
-    def select_models_for_task(self, has_risk: bool) -> dict:
-        """根据风险情况选择模型
-
-        Args:
-            has_risk: 是否检测到风险
+    def get_models(self) -> dict:
+        """获取当前模型配置
 
         Returns:
-            包含所选模型的字典
+            包含所有模型的字典
         """
-        if has_risk and self.enable_risk_model_selection:
-            return {
-                "calibrate_model": self.risk_calibrate_model or self.calibrate_model,
-                "calibrate_reasoning_effort": self.risk_calibrate_reasoning_effort or self.calibrate_reasoning_effort,
-                "summary_model": self.risk_summary_model or self.summary_model,
-                "summary_reasoning_effort": self.risk_summary_reasoning_effort or self.summary_reasoning_effort,
-                "validator_model": self.risk_validator_model or self.validator_model,
-                "validator_reasoning_effort": self.risk_validator_reasoning_effort or self.validator_reasoning_effort,
-                "has_risk": True,
-            }
-        else:
-            return {
-                "calibrate_model": self.calibrate_model,
-                "calibrate_reasoning_effort": self.calibrate_reasoning_effort,
-                "summary_model": self.summary_model,
-                "summary_reasoning_effort": self.summary_reasoning_effort,
-                "validator_model": self.validator_model,
-                "validator_reasoning_effort": self.validator_reasoning_effort,
-                "has_risk": False,
-            }
+        return {
+            "calibrate_model": self.calibrate_model,
+            "calibrate_reasoning_effort": self.calibrate_reasoning_effort,
+            "summary_model": self.summary_model,
+            "summary_reasoning_effort": self.summary_reasoning_effort,
+            "validator_model": self.validator_model,
+            "validator_reasoning_effort": self.validator_reasoning_effort,
+        }

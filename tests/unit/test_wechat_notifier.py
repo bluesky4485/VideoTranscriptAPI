@@ -358,19 +358,10 @@ class TestFormatLLMConfigMarkdown:
         })
         assert "high" in result
 
-    def test_risk_flag(self):
-        """Risk downgrade flag should be shown."""
+    def test_no_risk_flag_in_output(self):
+        """Models dict without has_risk should not show risk marker."""
         result = format_llm_config_markdown({
             "calibrate_model": "gpt-4",
-            "has_risk": True,
-        })
-        assert "\u964d\u7ea7" in result or "risk" in result.lower()
-
-    def test_no_risk_flag(self):
-        """No risk flag when has_risk is False."""
-        result = format_llm_config_markdown({
-            "calibrate_model": "gpt-4",
-            "has_risk": False,
         })
         assert "\u964d\u7ea7" not in result
 

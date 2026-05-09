@@ -98,9 +98,6 @@ def _handle_llm_task(llm_task: dict):
                 # 准备内容参数
                 content = _prepare_llm_content(llm_task, transcript, use_speaker_recognition)
 
-                # 风险检测
-                has_risk = _detect_risk(llm_task)
-
                 # 是否为仅校对模式（重新校对场景）
                 calibrate_only = llm_task.get("calibrate_only", False)
 
@@ -131,7 +128,6 @@ def _handle_llm_task(llm_task: dict):
                         description=llm_task.get("description", ""),
                         platform=platform or "",
                         media_id=media_id or "",
-                        has_risk=has_risk,
                         skip_summary=skip_summary_for_coordinator,
                     )
 
@@ -285,41 +281,6 @@ def _prepare_llm_content(llm_task: dict, transcript: str, use_speaker_recognitio
     return transcript
 
 
-def _detect_risk(llm_task: dict) -> bool:
-    """检测内容是否包含风险（用于模型选择）
-
-    Args:
-        llm_task: LLM 任务字典
-
-    Returns:
-        bool: 是否检测到风险
-    """
-    try:
-        from ...risk_control import is_enabled, sanitize_text
-
-        if is_enabled():
-            metadata_text = " ".join(
-                [
-                    llm_task.get("video_title", ""),
-                    llm_task.get("author", ""),
-                    llm_task.get("description", ""),
-                ]
-            ).strip()
-
-            if metadata_text:
-                risk_result = sanitize_text(metadata_text, text_type="general")
-                if risk_result["has_sensitive"]:
-                    logger.warning(
-                        f"[风控] 检测到 {len(risk_result['sensitive_words'])} 个敏感词，将切换到风险模型: "
-                        f"{risk_result['sensitive_words'][:5]}"
-                    )
-                    return True
-    except Exception as e:
-        logger.error(f"风险检测失败，使用默认模型: {e}")
-
-    return False
-
-
 def _build_result_dict(coordinator_result: dict) -> dict:
     """将协调器结果适配为统一格式
 
@@ -412,7 +373,7 @@ def _save_llm_results(
     if models_used:
         cache_manager.update_task_llm_config(task_id, models_used)
         logger.info(
-            f"LLM模型配置已保存: {task_id}, risk_detected={models_used.get('has_risk', False)}"
+            f"LLM模型配置已保存: {task_id}"
         )
 
     if not (platform and media_id):

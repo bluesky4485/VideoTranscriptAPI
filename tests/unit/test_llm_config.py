@@ -4,7 +4,7 @@ LLMConfig unit tests.
 Covers:
 - Default values
 - from_dict parsing from config dictionary
-- select_models_for_task (normal vs risk)
+- get_models
 - Edge cases (missing keys, partial config)
 
 All console output must be in English only (no emoji, no Chinese).
@@ -75,8 +75,8 @@ class TestLLMConfigFromDict:
         assert config.calibrate_model == "deepseek-v4-flash"
         assert config.summary_model == "deepseek-v4-pro"
 
-    def test_with_risk_models(self):
-        """Should parse risk model configuration."""
+    def test_old_risk_fields_ignored(self):
+        """Old risk model fields in config should be silently ignored."""
         config_dict = {
             "llm": {
                 "api_key": "k",
@@ -84,12 +84,12 @@ class TestLLMConfigFromDict:
                 "calibrate_model": "normal",
                 "summary_model": "normal-summary",
                 "risk_calibrate_model": "risk-model",
-                "risk_summary_model": "risk-summary",
+                "enable_risk_model_selection": True,
             }
         }
         config = LLMConfig.from_dict(config_dict)
-        assert config.risk_calibrate_model == "risk-model"
-        assert config.risk_summary_model == "risk-summary"
+        assert config.calibrate_model == "normal"
+        assert not hasattr(config, "risk_calibrate_model")
 
     def test_segmentation_config(self):
         """Should parse segmentation config."""
@@ -120,40 +120,25 @@ class TestLLMConfigFromDict:
         assert config.concurrent_workers == 10
 
 
-class TestLLMConfigSelectModels:
-    """Test select_models_for_task method."""
+class TestLLMConfigGetModels:
+    """Test get_models method."""
 
-    @pytest.fixture
-    def config_with_risk(self):
-        return LLMConfig(
-            api_key="k", base_url="u",
-            calibrate_model="normal-cal",
-            summary_model="normal-sum",
-            risk_calibrate_model="risk-cal",
-            risk_summary_model="risk-sum",
-            enable_risk_model_selection=True,
-        )
-
-    def test_normal_mode(self, config_with_risk):
-        """Without risk, should use normal models."""
-        models = config_with_risk.select_models_for_task(has_risk=False)
-        assert models["calibrate_model"] == "normal-cal"
-        assert models["summary_model"] == "normal-sum"
-
-    def test_risk_mode(self, config_with_risk):
-        """With risk, should use risk models."""
-        models = config_with_risk.select_models_for_task(has_risk=True)
-        assert models["calibrate_model"] == "risk-cal"
-        assert models["summary_model"] == "risk-sum"
-
-    def test_risk_disabled_ignores_flag(self):
-        """When risk selection disabled, always use normal models."""
+    def test_returns_configured_models(self):
+        """get_models should return all configured models."""
         config = LLMConfig(
             api_key="k", base_url="u",
-            calibrate_model="normal",
-            summary_model="normal-s",
-            risk_calibrate_model="risk",
-            enable_risk_model_selection=False,
+            calibrate_model="cal-model",
+            summary_model="sum-model",
         )
-        models = config.select_models_for_task(has_risk=True)
-        assert models["calibrate_model"] == "normal"
+        models = config.get_models()
+        assert models["calibrate_model"] == "cal-model"
+        assert models["summary_model"] == "sum-model"
+
+    def test_no_has_risk_in_result(self):
+        """get_models result should not contain has_risk field."""
+        config = LLMConfig(
+            api_key="k", base_url="u",
+            calibrate_model="m", summary_model="s",
+        )
+        models = config.get_models()
+        assert "has_risk" not in models

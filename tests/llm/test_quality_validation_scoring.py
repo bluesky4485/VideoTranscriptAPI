@@ -336,7 +336,7 @@ def main():
             description=metadata["description"],
             platform=metadata["platform"],
             media_id=metadata["media_id"],
-            selected_models=llm_config.select_models_for_task(has_risk=False),
+            selected_models=llm_config.get_models(),
         )
 
         print(f"\nProcessing completed:")

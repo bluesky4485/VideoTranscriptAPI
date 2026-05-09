@@ -44,7 +44,6 @@ def mock_config_dict():
                 "calibration_concurrent_limit": 3,
                 "quality_validation": {"enabled": True, "fallback_strategy": "best_quality"},
             },
-            "enable_risk_model_selection": False,
         }
     }
 

@@ -41,6 +41,34 @@ def _get_llm_timeout() -> int:
     return DEFAULT_LLM_TIMEOUT
 
 
+def _build_sensitive_detector(config: Dict[str, Any]):
+    """从 risk_control 配置构建 SensitiveDetector（如果启用）"""
+    risk_cfg = config.get("risk_control", {})
+    if not risk_cfg.get("enabled", False):
+        return None
+
+    urls = risk_cfg.get("sensitive_word_urls", [])
+    if not urls:
+        return None
+
+    try:
+        from ..risk_control.sensitive_words_manager import SensitiveWordsManager
+        from llm_compat.sensitive import SensitiveDetector
+
+        mgr = SensitiveWordsManager(risk_cfg)
+        words = mgr.load_words()
+        if not words:
+            logger.warning("[LLM] No sensitive words loaded, skipping SensitiveDetector")
+            return None
+
+        detector = SensitiveDetector(words=list(words))
+        logger.info(f"[LLM] SensitiveDetector created with {len(words)} words")
+        return detector
+    except Exception as e:
+        logger.error(f"[LLM] Failed to build SensitiveDetector: {e}")
+        return None
+
+
 def set_default_config(config: Optional[Dict[str, Any]]) -> None:
     """设置模块级默认配置并初始化 SyncLLMClient"""
     global _default_config, _sync_client
@@ -66,6 +94,9 @@ def set_default_config(config: Optional[Dict[str, Any]]) -> None:
         set_custom_patterns(patterns)
         logger.info(f"[LLM] Custom provider patterns set: {list(patterns.keys())}")
 
+    # 从 risk_control 配置加载敏感词库，传给 llm-compat SensitiveDetector 做 pre-scan
+    sensitive_detector = _build_sensitive_detector(config)
+
     _sync_client = SyncLLMClient(
         base_url=base_url,
         api_key=api_key,
@@ -76,8 +107,12 @@ def set_default_config(config: Optional[Dict[str, Any]]) -> None:
         collector_project=llm_cfg.get("collector_project", ""),
         collector_api_key=llm_cfg.get("collector_api_key", ""),
         refusal_keywords_url=llm_cfg.get("refusal_keywords_url"),
+        sensitive_detector=sensitive_detector,
     )
-    logger.info("[LLM] SyncLLMClient initialized with llm-compat")
+    if sensitive_detector:
+        logger.info(f"[LLM] SyncLLMClient initialized with SensitiveDetector ({len(sensitive_detector._words)} words)")
+    else:
+        logger.info("[LLM] SyncLLMClient initialized (no sensitive detector)")
 
 
 def get_default_config() -> Optional[Dict[str, Any]]:

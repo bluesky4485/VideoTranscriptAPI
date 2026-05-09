@@ -580,8 +580,4 @@ def format_llm_config_markdown(models_used: dict) -> str:
         effort_str = f" (reasoning: {summary_effort})" if summary_effort else ""
         lines.append(f"> 总结: {summary_model}{effort_str}")
 
-    # 风险降级标记
-    if models_used.get('has_risk', False):
-        lines.append("> [风险降级]")
-
     return "\n".join(lines)

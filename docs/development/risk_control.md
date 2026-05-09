@@ -328,22 +328,34 @@ if is_enabled():
 
 ---
 
+## 与 llm-compat 的分工
+
+LLM 侧的敏感词降级（检测敏感内容后切换模型）已迁移到 llm-compat 库统一处理：
+
+- **llm-compat `SensitiveDetector`**：LLM 调用前 pre-scan，命中敏感词则跳过主模型直接走 fallback
+- **llm-compat `content_fallbacks`**：LLM 调用被拒后自动降级到备选模型
+- **risk_control 模块**：仅负责企业微信通知的输出消敏（发送前 mask 敏感词）
+
+词库统一：启动时 `SensitiveWordsManager` 从 URL 下载词库，同时供 `SensitiveDetector`（LLM pre-scan）和 `TextSanitizer`（输出消敏）使用。
+
 ## 更新日志
+
+### v3.0.0 (2026-05-09)
+
+- LLM 侧敏感词降级迁移到 llm-compat（SensitiveDetector + content_fallbacks）
+- 删除 `_detect_risk()`、`has_risk`、`select_models_for_task()` 风险分支
+- 删除 `risk_calibrate_model`、`risk_summary_model` 等风险模型配置
+- risk_control 模块精简为仅输出消敏
+- 词库统一：同一词表同时供 LLM pre-scan 和输出消敏使用
 
 ### v2.0.0 (2025-10-17)
 
-- ✅ **重大变更**：完全重写消敏策略
-- ✅ 新增总结文本风控提示替换
-- ✅ 新增标题/作者截断处理
-- ✅ 移除随机字符插入逻辑
-- ✅ 简化配置（移除 `safe_char_pool`）
-- ✅ 更新所有测试用例
+- 完全重写消敏策略
+- 新增总结文本风控提示替换
+- 新增标题/作者截断处理
 
 ### v1.0.0 (2025-10-17)
 
-- ✅ 实现敏感词检测和消敏功能
-- ✅ 支持云端词库自动更新
-- ✅ URL排除功能
-- ✅ 不区分大小写匹配
-- ✅ 集成到企业微信通知系统
-- ✅ 完整的测试覆盖
+- 实现敏感词检测和消敏功能
+- 支持云端词库自动更新
+- 集成到企业微信通知系统

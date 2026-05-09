@@ -79,7 +79,6 @@ def test_plain_text_e2e():
             description="",
             platform="bilibili",
             media_id="BV1JkzaBpETo",
-            has_risk=False,
         )
 
         print("[PASS] Transcript processing completed")

@@ -92,7 +92,6 @@ def test_coordinator_with_funasr():
             description=description,
             platform=platform,
             media_id=media_id,
-            has_risk=False,
         )
 
         # 6. 输出结果

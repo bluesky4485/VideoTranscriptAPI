@@ -101,7 +101,6 @@ class LLMCoordinator:
         description: str = "",
         platform: str = "",
         media_id: str = "",
-        has_risk: bool = False,
         skip_summary: bool = False,
     ) -> Dict:
         """处理文本（统一入口）
@@ -113,7 +112,6 @@ class LLMCoordinator:
             description: 描述
             platform: 平台标识
             media_id: 媒体 ID
-            has_risk: 是否有风险内容
             skip_summary: 是否跳过总结生成（重新校对场景使用）
 
         Returns:
@@ -128,8 +126,8 @@ class LLMCoordinator:
         """
         logger.info(f"Processing content for: {title} (skip_summary={skip_summary})")
 
-        # 步骤 1: 选择模型
-        selected_models = self.config.select_models_for_task(has_risk)
+        # 获取模型配置（敏感词降级由 llm-compat 自动处理）
+        selected_models = self.config.get_models()
 
         # 步骤 2: 校对处理（路由到对应处理器）
         logger.info("Step 1/2: Calibration processing")
