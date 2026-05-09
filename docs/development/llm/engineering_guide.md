@@ -472,7 +472,7 @@ print(result.title, result.date)
 
 ### 4.2 多状态配置设计
 
-项目用单字段 `reasoning_effort`，由 `src/video_transcript_api/llm/providers.py` 按模型族翻译：
+项目用单字段 `reasoning_effort`，由 `llm-compat` 库按模型族自动翻译：
 
 | 配置值 | 语义 | 请求行为 |
 |--------|------|---------|
@@ -513,34 +513,22 @@ print(result.title, result.date)
 
 ### 4.4 代码调用
 
-**Payload 构建点统一调 `providers.build_request_payload`**：
+**所有 LLM 调用通过 llm-compat SyncLLMClient**，provider 翻译在 llm-compat 内部自动完成：
 
 ```python
 # llm/llm.py
-from . import providers
+from llm_compat import SyncLLMClient
 
-base_payload = {
-    "model": model,
-    "messages": [...],
-    "stream": False,
-}
-# build_request_payload 内部：
+# SyncLLMClient 在 set_default_config() 中初始化
+client = get_sync_client()
+result = client.chat(model, messages, reasoning_effort=reasoning_effort)
+# llm-compat 内部自动：
 # 1. detect_provider(model) 按 fnmatch 识别族
-# 2. _translate(family, effort) 生成 thinking 字段
-# 3. _deep_merge(base, translation) 合并，保留已有 extra_body
-data = providers.build_request_payload(model, reasoning_effort, base_payload)
+# 2. 翻译 reasoning_effort 为对应 provider 的 thinking 参数
+# 3. 内容审查拒绝时自动 fallback 到 content_fallbacks 配置的模型
 ```
 
-**日志描述从最终 payload 派生**（保证真实）：
-
-```python
-desc = providers.describe_from_payload(data)
-logger.info(
-    f"[{task_type}] Model: {desc['model']} ({desc['provider']}) | "
-    f"Thinking: {desc['thinking_mode']}"
-)
-# 输出：[SUMMARY] Model: deepseek-v4-flash (deepseek) | Thinking: high
-```
+**日志由 llm-compat 自动输出**（带 request_id、latency、token 用量）。
 
 ### 4.5 启动日志与配置校验
 
@@ -568,57 +556,24 @@ logger.info(
 - 如果原配置 `deepseek-chat + "high"` → 思考模式会实际触发，延迟和 token 成本明显上升
 - 如果原配置 `deepseek-reasoner + null` → 改 v4-flash 后 `null` 会退化为默认（仍开思考），行为一致
 
-### 4.7 如何添加新 provider（OSS 贡献指南）
+### 4.7 如何添加新 provider
 
-想给项目加 Claude / Qwen3 / 豆包等新 provider 的 thinking 支持，按以下步骤：
+Provider 翻译逻辑已迁移到 [llm-compat](https://github.com/zj1123581321/llm-compat) 库。添加新 provider（如 Claude/Qwen3/豆包）请在 llm-compat 侧修改，本项目自动继承。
 
-**步骤 1**：在 `src/video_transcript_api/llm/providers.py` 的 `_DEFAULT_PROVIDER_PATTERNS` 里加一条 fnmatch 规则（顺序敏感，具体的放前面）：
+**项目侧唯一需要做的**：如果 New API 代理使用自定义模型名，在 `config.jsonc` 中配置 `provider_patterns`：
 
-```python
-_DEFAULT_PROVIDER_PATTERNS = (
-    # ...
-    ("claude-*", "anthropic"),  # 新增
-    # ...
-)
-```
-
-**步骤 2**：在 `_FAMILY_CAPABILITIES` 里声明新 family 的能力：
-
-```python
-_FAMILY_CAPABILITIES = {
-    # ...
-    "anthropic": {
-        "disable_mode": "native",       # 或 effort_none/minimal_fallback/unsupported/na
-        "efforts": frozenset({"low", "medium", "high"}),
-        "min_effort": "low",
-        "max_effort": "high",
-    },
+```jsonc
+{
+  "llm": {
+    "provider_patterns": {
+      "my-proxy-ds-*": "deepseek",
+      "my-gpt-*": "openai_gpt4"
+    }
+  }
 }
 ```
 
-**步骤 3**：如果 `disable_mode="native"` 且翻译逻辑特殊（比如 Anthropic 的 `extended_thinking` 用不同字段），扩展 `_translate()` 的 `"native"` 分支：
-
-```python
-def _translate(family, effort):
-    if effort == "disabled":
-        if family == "anthropic":
-            return {"extra_body": {"thinking": {"type": "disabled"}}}  # 或其他字段
-        # ...
-```
-
-**步骤 4**：在 `tests/unit/test_providers.py` 加一个 `TestBuildRequestPayloadAnthropic` 类，覆盖：
-- `disabled`、`low`/`medium`/`high`、`None` 的翻译结果
-- 已有 `extra_body` 的深合并 regression 测试
-- 日志只输出白名单字段
-
-**步骤 5**：在本文档 §4.1 兼容性表增加一行，在 §4.7 下方（此处）**不用更新**。
-
-**贡献者检查清单**：
-- [ ] `_DEFAULT_PROVIDER_PATTERNS` 加入，顺序正确
-- [ ] `_FAMILY_CAPABILITIES` 声明 `disable_mode` + `efforts` + `min/max_effort`
-- [ ] `_translate()` 如需特殊逻辑已扩展
-- [ ] 测试矩阵覆盖全部 effort 值 + regression
-- [ ] §4.1 兼容性表更新
+`set_default_config()` 启动时自动调用 `llm_compat.set_custom_patterns()` 注入。
 
 **日志示例**：
 
