@@ -1,7 +1,7 @@
 """LLM 统一配置类"""
 
 from dataclasses import dataclass, field
-from typing import Optional, Dict
+from typing import Dict, List, Optional, Union
 
 
 @dataclass
@@ -87,6 +87,14 @@ class LLMConfig:
 
     # 风控配置
     enable_risk_model_selection: bool = False
+
+    # llm-compat 集成配置
+    content_fallbacks: Optional[Dict[str, List[str]]] = None
+    collector_url: Optional[str] = None
+    collector_project: str = ""
+    collector_api_key: str = ""
+    refusal_keywords_url: Optional[Union[str, List[str]]] = None
+    total_timeout: float = 300.0
 
     @classmethod
     def from_dict(cls, config_dict: dict) -> "LLMConfig":
@@ -233,6 +241,14 @@ class LLMConfig:
             enable_risk_model_selection=llm_config.get(
                 "enable_risk_model_selection", False
             ),
+
+            # llm-compat 集成
+            content_fallbacks=llm_config.get("content_fallbacks"),
+            collector_url=llm_config.get("collector_url"),
+            collector_project=llm_config.get("collector_project", ""),
+            collector_api_key=llm_config.get("collector_api_key", ""),
+            refusal_keywords_url=llm_config.get("refusal_keywords_url"),
+            total_timeout=float(llm_config.get("total_timeout", 300.0)),
         )
 
     def select_models_for_task(self, has_risk: bool) -> dict:

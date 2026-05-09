@@ -41,6 +41,30 @@ class FatalError(LLMError):
     pass
 
 
+def map_llm_compat_error(error: Exception) -> "LLMError":
+    """Map llm-compat exceptions to project error types.
+
+    llm-compat handles retries internally, so these mapped errors
+    are terminal (already exhausted retries).
+    """
+    from llm_compat import (
+        FatalError as LCFatal,
+        TimeoutError as LCTimeout,
+        JSONParseError as LCJSONParse,
+        ContentPolicyError as LCContentPolicy,
+    )
+
+    if isinstance(error, LCFatal):
+        return FatalError(str(error))
+    if isinstance(error, LCTimeout):
+        return TimeoutError(str(error))
+    if isinstance(error, LCJSONParse):
+        return TruncationError(str(error))
+    if isinstance(error, LCContentPolicy):
+        return RetryableError(str(error))
+    return RetryableError(str(error))
+
+
 def classify_error(error: Exception) -> type:
     """将异常分类为具体的错误类型
 
