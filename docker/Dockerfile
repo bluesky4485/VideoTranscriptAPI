@@ -13,6 +13,7 @@ COPY --from=mwader/static-ffmpeg:latest /ffprobe /usr/local/bin/ffprobe
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     unzip \
+    git \
     libjemalloc2 \
     && rm -rf /var/lib/apt/lists/*
 
