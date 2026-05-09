@@ -107,7 +107,7 @@
     // ============================================================
     "llm": {
         "api_key": "your-llm-api-key-here",     // LLM API 密钥
-        "base_url": "your-base-url-here",       // LLM API 基础 URL（兼容 OpenAI 格式）
+        "base_url": "https://your-api.com/v1",   // LLM API 基础 URL，只到 /v1（不含 /chat/completions）
 
         // ------------------------------------------------------
         // 校对模型配置
