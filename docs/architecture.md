@@ -89,7 +89,7 @@ src/video_transcript_api/llm/
 ├── coordinator.py              # 统一入口 + 场景路由
 ├── core/                       # 核心基础组件（共享）
 │   ├── config.py               # LLMConfig 统一配置类
-│   ├── llm_client.py           # LLM 客户端（含智能重试）
+│   ├── llm_client.py           # LLM 客户端薄封装（重试/翻译/降级由 llm-compat 处理）
 │   ├── key_info_extractor.py   # 关键信息提取器
 │   ├── speaker_inferencer.py   # 说话人推断器
 │   ├── quality_validator.py    # 质量验证器
@@ -104,7 +104,7 @@ src/video_transcript_api/llm/
 │   └── dialog_segmenter.py       # 有说话人文本分段器
 ├── prompts/                    # 提示词模板
 │   └── schemas/                # JSON Schema 定义
-└── llm.py                      # LLM API 基础调用
+└── llm.py                      # LLM API 调用（通过 llm-compat SyncLLMClient）
 ```
 
 ### 处理流程
@@ -138,7 +138,7 @@ LLMCoordinator.process(content, title, ...)
 | 组件 | 类名 | 主要职责 |
 |------|------|---------|
 | 统一配置 | `LLMConfig` | 集中管理所有 LLM 配置，支持风险模型切换 |
-| 可靠调用 | `LLMClient` | 智能重试（错误分类 + 指数退避：5s → 10s → 20s → 40s → 60s） |
+| 可靠调用 | `LLMClient` | 薄封装（重试/翻译/降级由 llm-compat SyncLLMClient 内部处理） |
 | 信息辅助 | `KeyInfoExtractor` | 从视频元数据提取关键信息，作为 Prompt 上下文 |
 | 角色还原 | `SpeakerInferencer` | 将 `spk_0` 映射为真实姓名 |
 | 质量防线 | `QualityValidator` | LLM 打分或长度比例验证 |
@@ -151,9 +151,10 @@ LLMCoordinator.process(content, title, ...)
 - 每段大小：`segment_size`（默认 2000 字符）
 - 并发数：`concurrent_workers`（默认 10）
 
-**智能重试**（LLMClient）：
-- 自动区分可重试错误（超时、服务器错误）和不可重试错误（认证失败）
-- 指数退避，最大 60s，最多 3 次重试
+**LLM 调用**（通过 llm-compat）：
+- 重试、指数退避、provider 翻译由 llm-compat 内部处理
+- 内容审查降级：主模型被拒时自动切换 fallback 模型（通过 `content_fallbacks` 配置）
+- 可选 Collector 集成：跨项目敏感词积累
 
 **质量阈值**：
 - 整体评分：`overall_score`（默认 8.0）
