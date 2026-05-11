@@ -60,13 +60,26 @@ skill/
 帮我安装 videotranscript-api skill。
 
 1. 把 https://github.com/zj1123581321/VideoTranscriptAPI.git 仓库里的 skill/ 目录复制到 ~/.claude/skills/videotranscript-api/
-2. 在我的 shell profile 里配置以下环境变量（写入 ~/.zshrc 或 ~/.bashrc，取决于我用的 shell）：
-   - VIDEO_TRANSCRIPT_API_BASE_URL=<API 服务地址，内网优先>
-   - VIDEO_TRANSCRIPT_API_TOKEN=<Bearer token>
-   - VIDEO_TRANSCRIPT_API_PUBLIC_URL=<公网地址，可选，不设时用 BASE_URL>
-   - VIDEO_TRANSCRIPT_API_WECHAT_WEBHOOK=<企微 webhook，可选>
-3. source 一下 profile 让变量生效
-4. 跑 health 命令验证连通性
+2. 配置环境变量：
+   - 如果是 macOS/Linux，写入 shell profile（~/.zshrc 或 ~/.bashrc）：
+     export VIDEO_TRANSCRIPT_API_BASE_URL="<API 服务地址>"
+     export VIDEO_TRANSCRIPT_API_TOKEN="<Bearer token>"
+     export VIDEO_TRANSCRIPT_API_PUBLIC_URL="<公网地址，可选>"
+     export VIDEO_TRANSCRIPT_API_WECHAT_WEBHOOK="<企微 webhook，可选>"
+     然后 source 一下 profile 让变量生效
+   - 如果是 Windows，用 PowerShell 设置用户级环境变量：
+     [System.Environment]::SetEnvironmentVariable("VIDEO_TRANSCRIPT_API_BASE_URL", "<API 服务地址>", "User")
+     [System.Environment]::SetEnvironmentVariable("VIDEO_TRANSCRIPT_API_TOKEN", "<Bearer token>", "User")
+     [System.Environment]::SetEnvironmentVariable("VIDEO_TRANSCRIPT_API_PUBLIC_URL", "<公网地址，可选>", "User")
+     [System.Environment]::SetEnvironmentVariable("VIDEO_TRANSCRIPT_API_WECHAT_WEBHOOK", "<企微 webhook，可选>", "User")
+     设置后需要重启终端才能生效
+3. 验证连通性：
+   - 先试 python3（macOS/Linux）或 python（Windows）运行：
+     python3 ~/.claude/skills/videotranscript-api/scripts/videotranscript.py health
+   - 如果 python 不可用，用 curl 验证：
+     curl -s <API 服务地址>/health
+
+注意：Windows 上 python3 命令是微软商店占位程序，会直接失败。请用 python 代替。
 ```
 
 ### Hermes
@@ -85,7 +98,7 @@ skill/
    - VIDEO_TRANSCRIPT_API_TOKEN=<Bearer token>
    - VIDEO_TRANSCRIPT_API_PUBLIC_URL=<公网地址，可选，不设时用 BASE_URL>
    - VIDEO_TRANSCRIPT_API_WECHAT_WEBHOOK=<企微 webhook，可选>
-3. 跑 health 命令验证连通性
+3. 验证连通性：先试 python3 跑 health 命令，python3 不可用则用 python，都不行就用 curl <API 服务地址>/health
 ```
 
 ### OpenClaw
