@@ -64,13 +64,13 @@ metadata:
 
 **任务是异步的，但 agent 应主动轮询交付结果。** 正确姿势：
 
-1. 调 `submit` 拿到 `view_token`
-2. 把查看页面 URL（`{public_url}/view/{view_token}`）发给用户
+1. 调 `submit`，脚本输出中会包含 `view_token` 和一条 `[url](url)` 格式的查看链接
+2. **把脚本输出的查看链接原样复制发给用户**（单独一条消息），不要自己拼 URL
 3. **立即尝试第一次查询**（可能命中缓存秒返回），调 `result <view_token> --type summary`
 4. 如果返回 202（还在处理），**每隔 1 分钟轮询一次**，最多轮询 10 次（覆盖 0–10 分钟）
 5. 返回 200 = 完成，把结果贴给用户；10 次仍未完成则告诉用户「还在处理中，可以点查看链接关注进度」
 
-**提交后必须单独发一条可点击的查看链接。** submit 成功后，务必用**单独的一条消息**把查看页面 URL 发给用户。**必须使用 markdown 链接格式 `[url](url)`**（如 `[https://example.com/view/vt_xxx](https://example.com/view/vt_xxx)`），不要发裸 URL——某些平台（如飞书）的 URL 解析器会在下划线处截断裸链接导致不可点击。
+**查看链接必须从脚本输出中原样复制，严禁自己拼接 URL。** 脚本输出的「查看链接」已经是正确的 `[url](url)` markdown 格式，直接复制发给用户即可。不要凭记忆重写域名或路径——LLM 重构 URL 极易拼错字母（如把 `lexgogo` 写成 `lexgugo`），导致链接失效。
 
 ## 环境变量
 
@@ -160,9 +160,9 @@ Options：`--platform youtube`、`--author 作者名`、`--q 关键词`、`--sta
 **场景 A：用户想要一个 B 站视频的总结**
 
 1. 用户：「帮我看看这个视频 https://www.bilibili.com/video/BVxxx 讲了什么」
-2. 调 `submit https://www.bilibili.com/video/BVxxx`，拿到 `view_token=vt_xyz`
-3. **单独发一条消息**，只包含查看链接：`{public_url}/view/vt_xyz`
-4. 立即调 `result vt_xyz --type summary`，如果命中缓存直接拿到结果
+2. 调 `submit https://www.bilibili.com/video/BVxxx`，脚本输出查看链接和 `view_token`
+3. **把脚本输出的查看链接原样复制，单独发一条消息给用户**
+4. 立即调 `result <view_token> --type summary`，如果命中缓存直接拿到结果
 5. 返回 202 → 每隔 1 分钟重试，直到拿到结果（最多 10 次）
 6. 拿到结果后把总结贴给用户
 
