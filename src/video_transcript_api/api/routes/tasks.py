@@ -16,7 +16,7 @@ from ..services.transcription import (
     TranscribeResponse,
     verify_token,
 )
-from ...utils.notifications import send_view_link_wechat
+from ...utils.notifications import send_view_link_wechat, get_notification_router
 from ...utils.accounts.user_manager import get_user_manager
 
 logger = get_logger()
@@ -113,11 +113,21 @@ async def transcribe_video(
         }
 
         try:
-            effective_webhook = (
-                request_body.wechat_webhook
-                or user_info.get("wechat_webhook")
-                or config.get("wechat", {}).get("webhook")
-            )
+            # Resolve notification channel and webhook
+            # Priority: notification_config > wechat_webhook > user_info > global config
+            notification_config = getattr(request_body, "notification_config", None)
+            if notification_config and notification_config.webhook:
+                effective_channel = notification_config.channel
+                effective_webhook = notification_config.webhook
+            elif request_body.wechat_webhook:
+                effective_channel = "wechat"
+                effective_webhook = request_body.wechat_webhook
+            else:
+                effective_channel = None
+                effective_webhook = (
+                    user_info.get("wechat_webhook")
+                    or config.get("wechat", {}).get("webhook")
+                )
 
             task_queue = get_task_queue()
             task = {
@@ -125,6 +135,7 @@ async def transcribe_video(
                 "url": url,
                 "use_speaker_recognition": request_body.use_speaker_recognition,
                 "wechat_webhook": effective_webhook,
+                "notification_channel": effective_channel,
                 "user_info": user_info,
                 "download_url": normalized_download_url,
                 "metadata_override": normalized_metadata_override,
@@ -158,9 +169,11 @@ async def transcribe_video(
                     elif "douyin.com" in display_url:
                         title = "抖音视频转录"
 
-                send_view_link_wechat(
+                notification_router = get_notification_router()
+                notification_router.send_view_link(
                     title=f"🎬 {title}",
                     view_token=view_token,
+                    channel_name=effective_channel,
                     webhook=effective_webhook,
                     original_url=display_url,
                 )

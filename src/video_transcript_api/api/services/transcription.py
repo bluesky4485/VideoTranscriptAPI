@@ -47,19 +47,40 @@ class MetadataOverride(BaseModel):
     author: Optional[str] = Field(None, description="视频作者", max_length=200)
 
 
+class NotificationConfig(BaseModel):
+    """通知配置（可选，用于 per-request 指定渠道）"""
+    channel: Optional[str] = Field(None, description="通知渠道: wechat / feishu / None(全部)")
+    webhook: Optional[str] = Field(None, description="自定义 webhook URL")
+
+    @field_validator("webhook")
+    @classmethod
+    def validate_webhook_url(cls, v):
+        if v is None or v.strip() == "":
+            return v
+        from ...utils.url_validator import validate_url_safe, URLValidationError
+        try:
+            validate_url_safe(v)
+        except URLValidationError as e:
+            raise ValueError(f"webhook URL is not allowed: {e}")
+        return v
+
+
 class TranscribeRequest(BaseModel):
     """转录请求数据模型"""
 
     url: str = Field(..., description="视频URL（平台链接，用于 view_token 和缓存）")
     use_speaker_recognition: bool = Field(False, description="是否使用说话人识别功能")
     wechat_webhook: Optional[str] = Field(
-        None, description="企业微信webhook地址，用于发送通知"
+        None, description="企业微信webhook地址（向后兼容）"
     )
     download_url: Optional[str] = Field(
         None, description="实际下载地址（可选，如果提供则优先使用）"
     )
     metadata_override: Optional[MetadataOverride] = Field(
         None, description="元数据覆盖（用于补充或覆盖解析的元数据）"
+    )
+    notification_config: Optional[NotificationConfig] = Field(
+        None, description="通知配置（可选，指定渠道和自定义 webhook）"
     )
 
     @field_validator("wechat_webhook")
