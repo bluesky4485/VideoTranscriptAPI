@@ -17,7 +17,7 @@
 - **多平台支持**：YouTube、Bilibili、抖音、小红书、小宇宙播客，工厂模式自动匹配下载器
 - **双引擎转录**：CapsWriter-Offline（通用转录）+ FunASR（说话人识别）
 - **智能文本处理**：LLM 自动校对 ASR 错误、专有名词纠错、说话人推断、内容总结
-- **企业级功能**：SQLite + 文件系统双层缓存、多用户管理、审计日志、企业微信通知、任务历史浏览器
+- **企业级功能**：SQLite + 文件系统双层缓存、多用户管理、审计日志、多渠道通知（企业微信 + 飞书）、任务历史浏览器
 - **风控系统**：敏感词检测、多策略文本脱敏、风险模型自动切换
 
 ## 外部依赖
@@ -150,7 +150,7 @@ video-transcript-api/
 详细文档位于 [docs/](docs/) 目录：
 
 - **架构设计**：[系统架构与模块详解](docs/architecture.md)
-- **使用指南**：[企业微信通知](docs/guides/wechat_notification.md) · [多用户系统](docs/guides/multi_user_setup.md)
+- **使用指南**：[多渠道通知（企微+飞书）](docs/guides/notification.md) · [多用户系统](docs/guides/multi_user_setup.md)
 - **API 指南**：[FunASR](docs/guides/api/funasr_spk_server_client_api.md) · [YouTube](docs/guides/api/youtube_client_guide.md) · [BBDown](docs/guides/api/bbdown_guide.md)
 - **开发文档**：[LLM 工程指南](docs/development/llm/engineering_guide.md) · [并发处理](docs/development/concurrency.md) · [日志系统](docs/development/logging.md)
 - **功能特性**：[Raw/Page 导出](docs/features/raw_export.md) · [Download URL 与元数据覆盖](docs/features/source_url_and_metadata_override.md)

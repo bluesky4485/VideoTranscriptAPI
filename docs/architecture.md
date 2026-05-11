@@ -211,11 +211,14 @@ data/cache/
 - 记录 API 端点、请求/响应时间、处理耗时、状态码、用户信息
 - 查询接口：`GET /api/audit/stats`、`GET /api/audit/calls`
 
-### 企业微信通知
+### 多渠道通知
 
-- 基于 `wecom-notifier` 库，全局单例频率控制（20 条/分钟）
-- 超长文本自动分段、URL 保护模式
-- 通知时机：任务创建、开始处理、缓存命中、任务完成
+- 基于 `wecom-notifier` 库（v0.3.1+），支持企业微信和飞书双平台
+- `NotificationRouter` 路由层按配置自动分发到所有启用的渠道
+- 支持 per-channel webhook：全局配置、用户级配置、per-request 指定
+- 渠道 fallback：目标渠道失败时自动退到备用渠道
+- 超长文本自动分段、URL 保护模式、频率控制（各渠道独立）
+- 通知时机：任务创建、开始处理、缓存命中、转录完成、LLM 完成、ASR 告警
 
 ### 风控系统
 
@@ -260,7 +263,8 @@ data/cache/
 |------|------|------|------|
 | `url` | string | 是 | 平台链接 |
 | `use_speaker_recognition` | boolean | 否 | 是否启用说话人识别（默认 false） |
-| `wechat_webhook` | string | 否 | 企业微信 webhook 地址 |
+| `wechat_webhook` | string | 否 | 企业微信 webhook 地址（向后兼容） |
+| `notification_config` | object | 否 | 通知配置：`{channel: "feishu", webhook: "..."}` |
 | `download_url` | string | 否 | 实际下载地址（跳过平台下载器） |
 | `metadata_override` | object | 否 | 元数据覆盖（title/description/author） |
 
