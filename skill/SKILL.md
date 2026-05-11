@@ -6,6 +6,7 @@ metadata:
     requires:
       bins:
         - python3
+        - python
     env:
       - name: VIDEO_TRANSCRIPT_API_BASE_URL
         description: API 请求地址。通常填内网/tailnet/局域网地址，图的是低延迟。例：http://localhost:8000
@@ -92,6 +93,8 @@ skill 在调用时从环境读取，**不要**在对话里要求用户粘贴 tok
 ## 命令总览
 
 所有命令通过 `python3 <skill>/scripts/videotranscript.py <sub> ...` 调用，输出默认是 markdown，加 `--format json` 拿结构化结果。
+
+**Windows 注意**：Windows 上 `python3` 是系统占位程序（只会打开 Microsoft Store），实际的 Python 命令是 `python`。如果 `python3` 执行失败（exit code 非 0/1/2/3），改用 `python` 重试。
 
 ### submit — 提交转录任务
 
@@ -192,6 +195,37 @@ Options：`--platform youtube`、`--author 作者名`、`--q 关键词`、`--sta
 | 3 | 配置问题（缺 env、参数非法） |
 
 遇到 exit 2 时别无脑重试 —— 先看 stderr，通常是 token 错或服务没起。遇到 503（队列满）可以隔 1–2 分钟退避重试。
+
+## Python 脚本跑不起来时的 HTTP Fallback
+
+如果 `python3` 不可用或脚本执行报错（比如 Windows 环境兼容问题），**直接用 curl 调 HTTP 端点**。关键端点映射：
+
+```bash
+# 提交任务（需要 token）
+curl -X POST "$BASE_URL/api/transcribe" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://..."}'
+
+# 查任务状态（需要 token）
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE_URL/api/task/$TASK_ID"
+
+# 拉总结（不需要 token）
+curl -s "$BASE_URL/view/$VIEW_TOKEN?raw=summary"
+
+# 拉校对后全文（不需要 token）
+curl -s "$BASE_URL/view/$VIEW_TOKEN?raw=calibrated"
+
+# 拉原始转录（不需要 token）
+curl -s "$BASE_URL/view/$VIEW_TOKEN?raw=transcript"
+
+# 历史查询（需要 token）
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE_URL/api/audit/history?platform=youtube&limit=20"
+```
+
+**注意端点不要搞混**：
+- 拉结果文本用 `/view/{view_token}?raw=<type>`，**不是** `/api/result/...`（不存在这个端点）
+- `/view/` 路径**不需要鉴权**，`/api/` 路径需要
 
 ## 更深入的 API 细节
 
