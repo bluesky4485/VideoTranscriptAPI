@@ -84,7 +84,7 @@ skill 在调用时从环境读取，**不要**在对话里要求用户粘贴 tok
 **为啥分两个地址**：服务端常跑在内网/tailnet（BASE_URL 用这个，请求最快），但用户拿 `/view/<token>` 链接可能从公网打开。配 PUBLIC_URL 后，skill 返回给用户的查看页面 URL 用公网域名拼，无论用户在哪张网都点得开。没配 PUBLIC_URL 的场景（纯本机 / 都在一张网内）行为不变。
 
 各平台配置方式：
-- **Claude Code**：`export VIDEO_TRANSCRIPT_API_BASE_URL=...` 写到 shell profile 或 `.env`
+- **Claude Code**：写入 `~/.claude/settings.json` 的 `"env"` 字段（推荐，跨平台通用）；也可以写 shell profile 的 `export`，但 Windows 上 Git Bash 不一定会 source
 - **Hermes**：`hermes setup` 时按提示填入
 - **OpenClaw**：编辑 `~/.openclaw/openclaw.json`，在 `skills.entries.videotranscript-api.env` 下加这两三个
 

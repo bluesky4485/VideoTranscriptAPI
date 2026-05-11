@@ -44,15 +44,18 @@ skill/
 ### Claude Code
 
 1. 把整个 `skill/` 目录放到你的 skill 索引路径下（常见路径：`~/.claude/skills/videotranscript-api/`），或者直接保留在本仓库里用本地路径引用。
-2. 在 shell profile（`.zshrc` / `.bashrc`）或项目 `.env` 中：
-   ```bash
-   export VIDEO_TRANSCRIPT_API_BASE_URL=http://your-server:8000
-   export VIDEO_TRANSCRIPT_API_TOKEN=sk-xxx...
-   # 可选：给用户点的公网地址（不设时用 BASE_URL）
-   export VIDEO_TRANSCRIPT_API_PUBLIC_URL=https://vt.example.com
-   # 可选：企业微信 webhook（设置后 submit 自动推送通知）
-   export VIDEO_TRANSCRIPT_API_WECHAT_WEBHOOK=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx
+2. 配置环境变量（推荐方式：写入 `~/.claude/settings.json` 的 `env` 字段，跨平台通用）：
+   ```json
+   {
+     "env": {
+       "VIDEO_TRANSCRIPT_API_BASE_URL": "http://your-server:8000",
+       "VIDEO_TRANSCRIPT_API_TOKEN": "sk-xxx...",
+       "VIDEO_TRANSCRIPT_API_PUBLIC_URL": "https://vt.example.com",
+       "VIDEO_TRANSCRIPT_API_WECHAT_WEBHOOK": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"
+     }
+   }
    ```
+   也可以用传统方式写入 shell profile（`.zshrc` / `.bashrc`）的 `export` 语句，但 Windows 上不推荐（Git Bash 不一定会 source）。
 
 **首次安装 prompt**（复制后把 `<...>` 占位符换成实际值）：
 
@@ -60,19 +63,17 @@ skill/
 帮我安装 videotranscript-api skill。
 
 1. 把 https://github.com/zj1123581321/VideoTranscriptAPI.git 仓库里的 skill/ 目录复制到 ~/.claude/skills/videotranscript-api/
-2. 配置环境变量：
-   - 如果是 macOS/Linux，写入 shell profile（~/.zshrc 或 ~/.bashrc）：
-     export VIDEO_TRANSCRIPT_API_BASE_URL="<API 服务地址>"
-     export VIDEO_TRANSCRIPT_API_TOKEN="<Bearer token>"
-     export VIDEO_TRANSCRIPT_API_PUBLIC_URL="<公网地址，可选>"
-     export VIDEO_TRANSCRIPT_API_WECHAT_WEBHOOK="<企微 webhook，可选>"
-     然后 source 一下 profile 让变量生效
-   - 如果是 Windows，用 PowerShell 设置用户级环境变量：
-     [System.Environment]::SetEnvironmentVariable("VIDEO_TRANSCRIPT_API_BASE_URL", "<API 服务地址>", "User")
-     [System.Environment]::SetEnvironmentVariable("VIDEO_TRANSCRIPT_API_TOKEN", "<Bearer token>", "User")
-     [System.Environment]::SetEnvironmentVariable("VIDEO_TRANSCRIPT_API_PUBLIC_URL", "<公网地址，可选>", "User")
-     [System.Environment]::SetEnvironmentVariable("VIDEO_TRANSCRIPT_API_WECHAT_WEBHOOK", "<企微 webhook，可选>", "User")
-     设置后需要重启终端才能生效
+2. 在 ~/.claude/settings.json 中配置环境变量（跨平台通用，不依赖 shell）：
+   在 JSON 顶层加一个 "env" 字段（如果已有则合并进去）：
+   {
+     "env": {
+       "VIDEO_TRANSCRIPT_API_BASE_URL": "<API 服务地址>",
+       "VIDEO_TRANSCRIPT_API_TOKEN": "<Bearer token>",
+       "VIDEO_TRANSCRIPT_API_PUBLIC_URL": "<公网地址，可选，不设时用 BASE_URL>",
+       "VIDEO_TRANSCRIPT_API_WECHAT_WEBHOOK": "<企微 webhook，可选>"
+     }
+   }
+   注意：不要覆盖 settings.json 里已有的其他配置，只合并 env 部分。
 3. 验证连通性：
    - 先试 python3（macOS/Linux）或 python（Windows）运行：
      python3 ~/.claude/skills/videotranscript-api/scripts/videotranscript.py health
