@@ -25,7 +25,9 @@ from ...transcriber import FunASRSpeakerClient, Transcriber
 from ...utils.notifications import (
     WechatNotifier,
     send_long_text_wechat,
+    get_notification_router,
 )
+from ...utils.notifications.channel import _clean_url
 from ...utils.rendering import get_base_url
 from ...utils.perf_tracker import PerfTracker
 
@@ -254,6 +256,7 @@ async def process_task_queue():
             url = task["url"]
             use_speaker_recognition = task.get("use_speaker_recognition", False)
             wechat_webhook = task.get("wechat_webhook")
+            notification_channel = task.get("notification_channel")
             download_url = task.get("download_url")
             metadata_override = task.get("metadata_override")
 
@@ -272,6 +275,7 @@ async def process_task_queue():
                     wechat_webhook,
                     download_url,
                     metadata_override,
+                    notification_channel=notification_channel,
                 )
 
                 def task_completed(future_result):
@@ -289,7 +293,10 @@ async def process_task_queue():
                             "error": str(exc),
                         }
                         display_url = url
-                        WechatNotifier().notify_task_status(display_url, "转录失败", str(exc))
+                        get_notification_router().notify_task_status(
+                            url=display_url, status="转录失败", error=str(exc),
+                            channel_name=notification_channel, webhook=wechat_webhook,
+                        )
 
                 future.add_done_callback(task_completed)
                 logger.info(f"任务已提交到线程池: {task_id}, URL: {url}")
@@ -311,7 +318,7 @@ async def process_task_queue():
 
 def process_transcription(
     task_id, url, use_speaker_recognition=False, wechat_webhook=None,
-    download_url=None, metadata_override=None
+    download_url=None, metadata_override=None, notification_channel=None,
 ):
     """
     处理视频转录
@@ -320,9 +327,10 @@ def process_transcription(
         task_id: 任务ID
         url: 平台链接（用于元数据解析、view_token 生成、缓存查询）
         use_speaker_recognition: 是否使用说话人识别
-        wechat_webhook: 企业微信webhook
+        wechat_webhook: 企业微信webhook（向后兼容）
         download_url: 实际下载地址（可选，如果提供则优先使用）
         metadata_override: 元数据覆盖（dict）
+        notification_channel: 指定通知渠道（wechat/feishu/None=全部）
     """
     # 性能追踪器：记录各阶段耗时
     tracker = PerfTracker(task_id=task_id)
@@ -345,11 +353,24 @@ def process_transcription(
 
         # url 本身就是平台链接，直接使用
         display_url = url
-        logger.info(f"企业微信通知将使用URL: {display_url}")
+        logger.info(f"通知将使用URL: {display_url}")
 
-        task_notifier = (
-            WechatNotifier(wechat_webhook) if wechat_webhook else WechatNotifier()
-        )
+        _router = get_notification_router()
+
+        class _TaskNotifier:
+            """Bound notifier for this task — wraps router with channel/webhook context."""
+            def notify_task_status(self, url, status, error=None, title=None, author=None, transcript=None):
+                return _router.notify_task_status(
+                    url=url, status=status, error=error, title=title,
+                    author=author, transcript=transcript,
+                    channel_name=notification_channel, webhook=wechat_webhook,
+                )
+            def send_text(self, content, skip_risk_control=False):
+                return _router.send_text(
+                    content, channel_name=notification_channel, webhook=wechat_webhook,
+                )
+
+        task_notifier = _TaskNotifier()
         engine_info = (
             "说话人识别(FunASR)" if use_speaker_recognition else "普通转录(CapsWriter)"
         )
@@ -489,12 +510,13 @@ def process_transcription(
                     logger.info("缓存模式 - 发送总结文本")
 
                 # 发送（跳过自动添加的内容类型标题）
-                send_long_text_wechat(
+                _router.send_long_text(
                     title=video_title,
                     url=display_url,
                     text=full_message,
                     is_summary=not skip_summary,
                     has_speaker_recognition=has_speaker_recognition,
+                    channel_name=notification_channel,
                     webhook=wechat_webhook,
                     skip_content_type_header=True,
                 )
@@ -509,27 +531,12 @@ def process_transcription(
                     base_url = get_base_url()
                     view_url = f"{base_url}/view/{task_info['view_token']}"
 
-                    # 使用限流系统发送完成通知，确保顺序正确
-                    clean_url = WechatNotifier()._clean_url(display_url)
+                    from ...utils.notifications.channel import _apply_risk_control_safe
+                    clean = _clean_url(display_url)
+                    sanitized_title = _apply_risk_control_safe(video_title, text_type="title")
 
-                    # 对标题进行风控处理
-                    sanitized_title = video_title
-                    try:
-                        from ...risk_control import is_enabled, sanitize_text
-
-                        if is_enabled():
-                            title_result = sanitize_text(video_title, text_type="title")
-                            if title_result["has_sensitive"]:
-                                logger.info(
-                                    f"[风控] 完成通知标题包含 {len(title_result['sensitive_words'])} 个敏感词，已处理"
-                                )
-                                sanitized_title = title_result["sanitized_text"]
-                    except Exception as risk_exc:
-                        logger.exception(f"完成通知标题风控处理失败: {risk_exc}")
-
-                    completion_message = f"# {sanitized_title}\n\n{clean_url}\n\n🔗 总结和校对：\n{view_url}\n\n✅ **【任务完成】**"
+                    completion_message = f"# {sanitized_title}\n\n{clean}\n\n🔗 总结和校对：\n{view_url}\n\n✅ **【任务完成】**"
                     logger.info(f"[缓存模式] 准备发送任务完成通知: {sanitized_title}")
-                    task_notifier = WechatNotifier(wechat_webhook)
                     task_notifier.send_text(completion_message, skip_risk_control=True)
                     logger.info(f"[缓存模式] 任务完成通知已加入限流队列: {task_id}")
 
@@ -591,6 +598,7 @@ def process_transcription(
                         else None,
                         "is_generic": is_generic_downloader or is_from_generic,
                         "wechat_webhook": wechat_webhook,
+                        "notification_channel": notification_channel,
                         "perf_tracker": tracker,
                     }
                 )
@@ -1292,10 +1300,10 @@ def process_transcription(
         # 任务失败时输出已记录的性能摘要
         tracker.log_summary()
         display_url = url
-        task_notifier = (
-            WechatNotifier(wechat_webhook) if wechat_webhook else WechatNotifier()
+        get_notification_router().notify_task_status(
+            url=display_url, status="转录异常", error=str(exc),
+            channel_name=notification_channel, webhook=wechat_webhook,
         )
-        task_notifier.notify_task_status(display_url, "转录异常", str(exc))
         cache_manager.update_task_status(task_id, "failed", download_url=download_url)
         return {
             "status": "failed",

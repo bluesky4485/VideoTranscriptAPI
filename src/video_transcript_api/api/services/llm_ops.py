@@ -26,7 +26,9 @@ from ...utils.notifications import (
     WechatNotifier,
     send_long_text_wechat,
     format_llm_config_markdown,
+    get_notification_router,
 )
+from ...utils.notifications.channel import _clean_url, _apply_risk_control_safe
 from ...utils.rendering import get_base_url
 from ...utils.perf_tracker import PerfTracker
 
@@ -81,10 +83,17 @@ def _handle_llm_task(llm_task: dict):
             transcript = llm_task["transcript"]
             use_speaker_recognition = llm_task.get("use_speaker_recognition", False)
             wechat_webhook = llm_task.get("wechat_webhook")
+            notification_channel = llm_task.get("notification_channel")
 
-            task_notifier = (
-                WechatNotifier(wechat_webhook) if wechat_webhook else WechatNotifier()
-            )
+            _router = get_notification_router()
+
+            class _TaskNotifier:
+                def send_text(self, content, skip_risk_control=False):
+                    return _router.send_text(
+                        content, channel_name=notification_channel, webhook=wechat_webhook,
+                    )
+
+            task_notifier = _TaskNotifier()
             logger.info(f"开始处理LLM任务: {task_id}, 标题: {video_title}")
 
             try:
@@ -147,15 +156,16 @@ def _handle_llm_task(llm_task: dict):
                     summary_backfill=summary_backfill,
                 )
 
-                # 发送企微通知
+                # 发送通知（多渠道）
                 if not calibrate_only:
-                    _send_wechat_notification(
+                    _send_notification(
                         task_id=task_id,
                         video_title=video_title,
                         display_url=display_url,
                         use_speaker_recognition=use_speaker_recognition,
                         result_dict=result_dict,
                         wechat_webhook=wechat_webhook,
+                        notification_channel=notification_channel,
                     )
 
                 logger.info(f"LLM任务处理完成: {task_id}, 标题: {video_title}")
@@ -445,46 +455,46 @@ def _save_llm_results(
         logger.warning(f"LLM处理全部失败，未保存任何结果文件: {task_id}")
 
 
-def _send_wechat_notification(
+def _send_notification(
     task_id: str,
     video_title: str,
     display_url: str,
     use_speaker_recognition: bool,
     result_dict: dict,
     wechat_webhook: str = None,
+    notification_channel: str = None,
 ):
-    """发送 LLM 处理结果的企微通知
+    """Send LLM results notification via router (multi-channel).
 
     Args:
-        task_id: 任务 ID
-        video_title: 视频标题
-        display_url: 显示用 URL
-        use_speaker_recognition: 是否使用说话人识别
-        result_dict: LLM 处理结果字典
-        wechat_webhook: 企微 webhook 地址
+        task_id: task ID
+        video_title: video title
+        display_url: display URL
+        use_speaker_recognition: speaker recognition flag
+        result_dict: LLM result dict
+        wechat_webhook: webhook URL (backward compat)
+        notification_channel: target channel (wechat/feishu/None=all)
     """
+    router = get_notification_router()
+
     calibrated_text = result_dict.get("校对文本", "")
     summary_text = result_dict.get("内容总结")
     skip_summary = result_dict.get("skip_summary", False)
     stats = result_dict.get("stats", {})
     models_used = result_dict.get("models_used", {})
 
-    # 获取查看链接
     task_info = cache_manager.get_task_by_id(task_id)
     view_url = ""
     if task_info and task_info.get("view_token"):
         base_url = get_base_url()
         view_url = f"{base_url}/view/{task_info['view_token']}"
 
-    # 构建统计信息
     original_length = stats.get("original_length", 0)
     calibrated_length = stats.get("calibrated_length", 0)
     summary_length = stats.get("summary_length", 0)
 
-    # 校准质量警告
     calibration_warning = _build_calibration_warning(stats)
 
-    # 构建完整的消息格式
     speaker_info = "（含说话人识别）" if use_speaker_recognition else ""
     model_config_text = format_llm_config_markdown(models_used)
 
@@ -515,30 +525,32 @@ def _send_wechat_notification(
 {summary_text}"""
         logger.info(f"发送总结文本: {task_id}")
 
-    send_long_text_wechat(
+    router.send_long_text(
         title=video_title,
         url=display_url,
         text=full_message,
         is_summary=not skip_summary,
         has_speaker_recognition=use_speaker_recognition,
+        channel_name=notification_channel,
         webhook=wechat_webhook,
         skip_content_type_header=True,
     )
 
-    time.sleep(0.1)  # 100ms延迟，确保总结文本已加入队列
+    time.sleep(0.1)
 
-    # 发送任务完成通知
     task_info = cache_manager.get_task_by_id(task_id)
     if task_info and task_info.get("view_token"):
         base_url = get_base_url()
         view_url = f"{base_url}/view/{task_info['view_token']}"
-        clean_url = WechatNotifier()._clean_url(display_url)
-
+        clean = _clean_url(display_url)
         sanitized_title = _sanitize_title(video_title)
 
-        completion_message = f"# {sanitized_title}\n\n{clean_url}\n\n🔗 总结和校对：\n{view_url}\n\n✅ **【任务完成】**"
-        task_notifier = WechatNotifier(wechat_webhook)
-        task_notifier.send_text(completion_message, skip_risk_control=True)
+        completion_message = f"# {sanitized_title}\n\n{clean}\n\n🔗 总结和校对：\n{view_url}\n\n✅ **【任务完成】**"
+        router.send_text(
+            completion_message,
+            channel_name=notification_channel,
+            webhook=wechat_webhook,
+        )
         logger.info(f"任务完成通知已加入限流队列: {task_id}")
 
 

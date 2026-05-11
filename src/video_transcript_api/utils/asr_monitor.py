@@ -212,17 +212,20 @@ class ASRMonitor:
         logger.info(f"ASR recovery alert sent for {name}")
 
     def _send_notification(self, message: str):
-        """发送企微通知
+        """Send alert notification via all configured channels.
 
         Args:
-            message: 通知内容
+            message: notification content
         """
         try:
             if self.notifier is None:
-                from .notifications import WechatNotifier
-                self.notifier = WechatNotifier()
+                from .notifications import get_notification_router
+                self.notifier = get_notification_router()
 
-            self.notifier.send_text(message)
+            if hasattr(self.notifier, 'send_text') and callable(self.notifier.send_text):
+                self.notifier.send_text(message)
+            else:
+                logger.warning("notifier does not support send_text")
         except Exception as e:
             logger.error(f"failed to send ASR alert notification: {e}")
 
