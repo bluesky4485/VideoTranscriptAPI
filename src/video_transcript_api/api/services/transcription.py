@@ -257,6 +257,7 @@ async def process_task_queue():
             use_speaker_recognition = task.get("use_speaker_recognition", False)
             wechat_webhook = task.get("wechat_webhook")
             notification_channel = task.get("notification_channel")
+            notification_webhooks = task.get("notification_webhooks", {})
             download_url = task.get("download_url")
             metadata_override = task.get("metadata_override")
 
@@ -276,6 +277,7 @@ async def process_task_queue():
                     download_url,
                     metadata_override,
                     notification_channel=notification_channel,
+                    notification_webhooks=notification_webhooks,
                 )
 
                 def task_completed(future_result):
@@ -295,7 +297,7 @@ async def process_task_queue():
                         display_url = url
                         get_notification_router().notify_task_status(
                             url=display_url, status="转录失败", error=str(exc),
-                            channel_name=notification_channel, webhook=wechat_webhook,
+                            channel_name=notification_channel, webhooks=notification_webhooks,
                         )
 
                 future.add_done_callback(task_completed)
@@ -319,6 +321,7 @@ async def process_task_queue():
 def process_transcription(
     task_id, url, use_speaker_recognition=False, wechat_webhook=None,
     download_url=None, metadata_override=None, notification_channel=None,
+    notification_webhooks=None,
 ):
     """
     处理视频转录
@@ -331,7 +334,10 @@ def process_transcription(
         download_url: 实际下载地址（可选，如果提供则优先使用）
         metadata_override: 元数据覆盖（dict）
         notification_channel: 指定通知渠道（wechat/feishu/None=全部）
+        notification_webhooks: per-channel webhook dict {"wechat": "...", "feishu": "..."}
     """
+    if notification_webhooks is None:
+        notification_webhooks = {}
     # 性能追踪器：记录各阶段耗时
     tracker = PerfTracker(task_id=task_id)
 
@@ -363,11 +369,11 @@ def process_transcription(
                 return _router.notify_task_status(
                     url=url, status=status, error=error, title=title,
                     author=author, transcript=transcript,
-                    channel_name=notification_channel, webhook=wechat_webhook,
+                    channel_name=notification_channel, webhooks=notification_webhooks,
                 )
             def send_text(self, content, skip_risk_control=False):
                 return _router.send_text(
-                    content, channel_name=notification_channel, webhook=wechat_webhook,
+                    content, channel_name=notification_channel, webhooks=notification_webhooks,
                 )
 
         task_notifier = _TaskNotifier()
@@ -517,7 +523,7 @@ def process_transcription(
                     is_summary=not skip_summary,
                     has_speaker_recognition=has_speaker_recognition,
                     channel_name=notification_channel,
-                    webhook=wechat_webhook,
+                    webhooks=notification_webhooks,
                     skip_content_type_header=True,
                 )
 
@@ -599,6 +605,7 @@ def process_transcription(
                         "is_generic": is_generic_downloader or is_from_generic,
                         "wechat_webhook": wechat_webhook,
                         "notification_channel": notification_channel,
+                        "notification_webhooks": notification_webhooks,
                         "perf_tracker": tracker,
                     }
                 )
@@ -1302,7 +1309,7 @@ def process_transcription(
         display_url = url
         get_notification_router().notify_task_status(
             url=display_url, status="转录异常", error=str(exc),
-            channel_name=notification_channel, webhook=wechat_webhook,
+            channel_name=notification_channel, webhooks=notification_webhooks,
         )
         cache_manager.update_task_status(task_id, "failed", download_url=download_url)
         return {

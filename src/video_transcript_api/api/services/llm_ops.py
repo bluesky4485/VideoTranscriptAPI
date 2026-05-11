@@ -84,13 +84,15 @@ def _handle_llm_task(llm_task: dict):
             use_speaker_recognition = llm_task.get("use_speaker_recognition", False)
             wechat_webhook = llm_task.get("wechat_webhook")
             notification_channel = llm_task.get("notification_channel")
+            notification_webhooks = llm_task.get("notification_webhooks", {})
 
             _router = get_notification_router()
 
             class _TaskNotifier:
                 def send_text(self, content, skip_risk_control=False):
                     return _router.send_text(
-                        content, channel_name=notification_channel, webhook=wechat_webhook,
+                        content, channel_name=notification_channel,
+                        webhooks=notification_webhooks,
                     )
 
             task_notifier = _TaskNotifier()
@@ -164,8 +166,8 @@ def _handle_llm_task(llm_task: dict):
                         display_url=display_url,
                         use_speaker_recognition=use_speaker_recognition,
                         result_dict=result_dict,
-                        wechat_webhook=wechat_webhook,
                         notification_channel=notification_channel,
+                        notification_webhooks=notification_webhooks,
                     )
 
                 logger.info(f"LLM任务处理完成: {task_id}, 标题: {video_title}")
@@ -461,8 +463,8 @@ def _send_notification(
     display_url: str,
     use_speaker_recognition: bool,
     result_dict: dict,
-    wechat_webhook: str = None,
     notification_channel: str = None,
+    notification_webhooks: dict = None,
 ):
     """Send LLM results notification via router (multi-channel).
 
@@ -472,9 +474,11 @@ def _send_notification(
         display_url: display URL
         use_speaker_recognition: speaker recognition flag
         result_dict: LLM result dict
-        wechat_webhook: webhook URL (backward compat)
         notification_channel: target channel (wechat/feishu/None=all)
+        notification_webhooks: per-channel webhook dict
     """
+    if notification_webhooks is None:
+        notification_webhooks = {}
     router = get_notification_router()
 
     calibrated_text = result_dict.get("校对文本", "")
@@ -532,7 +536,7 @@ def _send_notification(
         is_summary=not skip_summary,
         has_speaker_recognition=use_speaker_recognition,
         channel_name=notification_channel,
-        webhook=wechat_webhook,
+        webhooks=notification_webhooks,
         skip_content_type_header=True,
     )
 
@@ -549,7 +553,7 @@ def _send_notification(
         router.send_text(
             completion_message,
             channel_name=notification_channel,
-            webhook=wechat_webhook,
+            webhooks=notification_webhooks,
         )
         logger.info(f"任务完成通知已加入限流队列: {task_id}")
 

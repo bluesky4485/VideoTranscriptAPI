@@ -265,6 +265,103 @@ class TestInitFromConfig:
 
 
 # ============================================================
+# Per-Channel Webhooks Dict
+# ============================================================
+
+class TestWebhooksDict:
+    """Tests for per-channel webhooks dict dispatch."""
+
+    def test_webhooks_dict_routes_correct_webhook_per_channel(self, router_dual):
+        """Each channel should receive its own webhook from the dict."""
+        router, wechat, feishu = router_dual
+        webhooks = {
+            "wechat": "https://qyapi.weixin.qq.com/user1",
+            "feishu": "https://open.feishu.cn/user1",
+        }
+        router.send_text("hello", webhooks=webhooks)
+
+        wechat.send_text.assert_called_once_with("hello", webhook="https://qyapi.weixin.qq.com/user1")
+        feishu.send_text.assert_called_once_with("hello", webhook="https://open.feishu.cn/user1")
+
+    def test_webhooks_dict_missing_channel_passes_none(self, router_dual):
+        """Channel not in webhooks dict should get webhook=None (use config default)."""
+        router, wechat, feishu = router_dual
+        webhooks = {"wechat": "https://qyapi.weixin.qq.com/user1"}
+
+        router.send_text("hello", webhooks=webhooks)
+
+        wechat.send_text.assert_called_once_with("hello", webhook="https://qyapi.weixin.qq.com/user1")
+        feishu.send_text.assert_called_once_with("hello", webhook=None)
+
+    def test_webhooks_dict_with_channel_name(self, router_dual):
+        """When channel_name is set, webhooks dict still provides the right webhook."""
+        router, wechat, feishu = router_dual
+        webhooks = {
+            "wechat": "https://qyapi.weixin.qq.com/user1",
+            "feishu": "https://open.feishu.cn/user1",
+        }
+        router.send_text("hello", channel_name="feishu", webhooks=webhooks)
+
+        feishu.send_text.assert_called_once_with("hello", webhook="https://open.feishu.cn/user1")
+        wechat.send_text.assert_not_called()
+
+    def test_webhooks_dict_notify_task_status(self, router_dual):
+        """notify_task_status should also respect webhooks dict."""
+        router, wechat, feishu = router_dual
+        webhooks = {
+            "wechat": "https://wechat/user1",
+            "feishu": "https://feishu/user1",
+        }
+        router.notify_task_status(
+            url="https://example.com", status="started", webhooks=webhooks
+        )
+
+        wechat_call = wechat.notify_task_status.call_args
+        feishu_call = feishu.notify_task_status.call_args
+        assert wechat_call.kwargs.get("webhook") == "https://wechat/user1"
+        assert feishu_call.kwargs.get("webhook") == "https://feishu/user1"
+
+    def test_webhooks_dict_send_rich(self, router_dual):
+        """send_rich should also respect webhooks dict."""
+        router, wechat, feishu = router_dual
+        webhooks = {
+            "wechat": "https://wechat/user1",
+            "feishu": "https://feishu/user1",
+        }
+        router.send_rich("## content", webhooks=webhooks)
+
+        wechat_call = wechat.send_rich.call_args
+        feishu_call = feishu.send_rich.call_args
+        assert wechat_call.kwargs.get("webhook") == "https://wechat/user1"
+        assert feishu_call.kwargs.get("webhook") == "https://feishu/user1"
+
+    def test_webhooks_none_falls_back_to_webhook_param(self, router_dual):
+        """When webhooks=None, fall back to single webhook param (backward compat)."""
+        router, wechat, feishu = router_dual
+        router.send_text("hello", webhook="https://single-webhook")
+
+        wechat.send_text.assert_called_once_with("hello", webhook="https://single-webhook")
+        feishu.send_text.assert_called_once_with("hello", webhook="https://single-webhook")
+
+    def test_webhooks_dict_fallback_on_failure(self, router_dual):
+        """Fallback should use webhooks dict for fallback channel too."""
+        router, wechat, feishu = router_dual
+        feishu.send_text.return_value = False
+        wechat.send_text.return_value = True
+        webhooks = {
+            "wechat": "https://wechat/user1",
+            "feishu": "https://feishu/user1",
+        }
+        result = router.send_text("hello", channel_name="feishu", webhooks=webhooks)
+
+        # Feishu failed, should fallback to wechat with wechat's webhook
+        assert result.get("feishu") is False
+        assert wechat.send_text.called
+        fallback_call = wechat.send_text.call_args
+        assert fallback_call.kwargs.get("webhook") == "https://wechat/user1"
+
+
+# ============================================================
 # Convenience: is_enabled
 # ============================================================
 

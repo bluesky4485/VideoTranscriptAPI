@@ -113,28 +113,40 @@ async def transcribe_video(
         }
 
         try:
-            # Resolve notification channel and webhook
-            # Priority: notification_config > wechat_webhook > user_info > global config
+            # Build per-channel webhooks dict
+            # Base: user-level > global config
+            notification_webhooks = {}
+            wechat_wh = (
+                user_info.get("wechat_webhook")
+                or config.get("wechat", {}).get("webhook")
+            )
+            if wechat_wh:
+                notification_webhooks["wechat"] = wechat_wh
+            feishu_wh = (
+                user_info.get("feishu_webhook")
+                or config.get("feishu", {}).get("webhook")
+            )
+            if feishu_wh:
+                notification_webhooks["feishu"] = feishu_wh
+
+            # Per-request overrides
+            effective_channel = None
             notification_config = getattr(request_body, "notification_config", None)
             if notification_config and notification_config.webhook:
                 effective_channel = notification_config.channel
-                effective_webhook = notification_config.webhook
+                if effective_channel:
+                    notification_webhooks[effective_channel] = notification_config.webhook
             elif request_body.wechat_webhook:
                 effective_channel = "wechat"
-                effective_webhook = request_body.wechat_webhook
-            else:
-                effective_channel = None
-                effective_webhook = (
-                    user_info.get("wechat_webhook")
-                    or config.get("wechat", {}).get("webhook")
-                )
+                notification_webhooks["wechat"] = request_body.wechat_webhook
 
             task_queue = get_task_queue()
             task = {
                 "id": task_id,
                 "url": url,
                 "use_speaker_recognition": request_body.use_speaker_recognition,
-                "wechat_webhook": effective_webhook,
+                "wechat_webhook": notification_webhooks.get("wechat"),
+                "notification_webhooks": notification_webhooks,
                 "notification_channel": effective_channel,
                 "user_info": user_info,
                 "download_url": normalized_download_url,
@@ -174,7 +186,7 @@ async def transcribe_video(
                     title=f"🎬 {title}",
                     view_token=view_token,
                     channel_name=effective_channel,
-                    webhook=effective_webhook,
+                    webhooks=notification_webhooks,
                     original_url=display_url,
                 )
                 logger.info(f"已发送任务创建通知: {task_id}，使用URL: {display_url}")
@@ -197,7 +209,7 @@ async def transcribe_video(
             task_id=task_id,
             user_agent=request.headers.get("User-Agent"),
             remote_ip=request.client.host if request.client else None,
-            wechat_webhook=effective_webhook,
+            wechat_webhook=notification_webhooks.get("wechat"),
         )
 
         return TranscribeResponse(
@@ -418,12 +430,21 @@ async def recalibrate(
     else:
         transcript_text = transcript_data
 
-    # 确定 webhook
-    effective_webhook = (
+    # Build per-channel webhooks
+    recal_webhooks = {}
+    wechat_wh = (
         request_body.wechat_webhook
         or user_info.get("wechat_webhook")
         or config.get("wechat", {}).get("webhook")
     )
+    if wechat_wh:
+        recal_webhooks["wechat"] = wechat_wh
+    feishu_wh = (
+        user_info.get("feishu_webhook")
+        or config.get("feishu", {}).get("webhook")
+    )
+    if feishu_wh:
+        recal_webhooks["feishu"] = feishu_wh
 
     # 放入 LLM 队列
     from ..context import get_llm_queue
@@ -442,8 +463,9 @@ async def recalibrate(
         "use_speaker_recognition": use_speaker_recognition,
         "transcription_data": transcription_data_for_llm if use_speaker_recognition else None,
         "is_generic": False,
-        "wechat_webhook": effective_webhook,
-        "calibrate_only": True,  # 标记仅校对模式
+        "wechat_webhook": recal_webhooks.get("wechat"),
+        "notification_webhooks": recal_webhooks,
+        "calibrate_only": True,
     }
 
     try:
@@ -465,7 +487,7 @@ async def recalibrate(
         task_id=task_id,
         user_agent=request.headers.get("User-Agent"),
         remote_ip=request.client.host if request.client else None,
-        wechat_webhook=effective_webhook,
+        wechat_webhook=recal_webhooks.get("wechat"),
     )
 
     return TranscribeResponse(

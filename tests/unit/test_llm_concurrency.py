@@ -76,6 +76,8 @@ def patched_llm_environment(monkeypatch):
             return {"fake": True}
         def send_text(self, content, **kwargs):
             return {"fake": True}
+        def notify_task_status(self, **kwargs):
+            return {"fake": True}
 
     # Patch llm_ops module-level variables
     monkeypatch.setattr(llm_ops_module, "llm_task_queue", dummy_queue)

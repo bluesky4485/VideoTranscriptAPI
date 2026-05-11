@@ -4,13 +4,15 @@
       "user_id": "user_001",
       "name": "张三",
       "wechat_webhook": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=user1-key",
+      "feishu_webhook": "https://open.feishu.cn/open-apis/bot/v2/hook/user1-key",
       "created_at": "2025-01-01T00:00:00Z",
       "enabled": true
     },
     "sk-user002-yyyyyyyyyy": {
-      "user_id": "user_002", 
+      "user_id": "user_002",
       "name": "李四",
       "wechat_webhook": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=user2-key",
+      "feishu_webhook": "",
       "created_at": "2025-01-01T00:00:00Z",
       "enabled": true
     },

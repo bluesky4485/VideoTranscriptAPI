@@ -103,9 +103,10 @@ class UserManager:
             logger.debug("单token回退模式验证成功")
             return {
                 "user_id": "legacy_user",
-                "name": "Legacy User", 
+                "name": "Legacy User",
                 "api_key": token,
                 "wechat_webhook": self.fallback_config.get("wechat", {}).get("webhook"),
+                "feishu_webhook": self.fallback_config.get("feishu", {}).get("webhook"),
                 "enabled": True,
                 "is_legacy": True  # 标记为回退模式用户
             }
@@ -138,12 +139,13 @@ class UserManager:
                     "name": "Legacy User",
                     "api_key": fallback_token,
                     "wechat_webhook": self.fallback_config.get("wechat", {}).get("webhook"),
+                    "feishu_webhook": self.fallback_config.get("feishu", {}).get("webhook"),
                     "enabled": True,
                     "is_legacy": True
                 }
-        
+
         return None
-    
+
     def get_user_webhook(self, token: str) -> Optional[str]:
         """
         获取用户的企业微信webhook地址
@@ -182,6 +184,7 @@ class UserManager:
                 "name": "Legacy User",
                 "api_key_masked": self._mask_api_key(fallback_token),
                 "wechat_webhook": self.fallback_config.get("wechat", {}).get("webhook"),
+                "feishu_webhook": self.fallback_config.get("feishu", {}).get("webhook"),
                 "enabled": True,
                 "is_legacy": True
             })
