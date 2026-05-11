@@ -39,7 +39,8 @@ token 可能是 `config.jsonc` 中 `api.auth_token`（单用户），或 `config
 {
   "url": "https://...",                        // 必填
   "use_speaker_recognition": false,            // 可选，默认 false
-  "wechat_webhook": "https://qyapi...",        // 可选，覆盖服务端默认
+  "wechat_webhook": "https://qyapi...",        // 可选，企微 webhook
+  "feishu_webhook": "https://open.feishu.cn/...", // 可选，飞书 webhook
   "download_url": "https://direct-link.mp4",   // 可选，绕过平台解析
   "metadata_override": {                       // 可选
     "title": "...",        // ≤ 200 字

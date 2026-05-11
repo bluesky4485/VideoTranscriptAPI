@@ -73,7 +73,10 @@ class TranscribeRequest(BaseModel):
     url: str = Field(..., description="视频URL（平台链接，用于 view_token 和缓存）")
     use_speaker_recognition: bool = Field(False, description="是否使用说话人识别功能")
     wechat_webhook: Optional[str] = Field(
-        None, description="企业微信webhook地址（向后兼容）"
+        None, description="企业微信webhook地址"
+    )
+    feishu_webhook: Optional[str] = Field(
+        None, description="飞书webhook地址"
     )
     download_url: Optional[str] = Field(
         None, description="实际下载地址（可选，如果提供则优先使用）"
@@ -85,7 +88,7 @@ class TranscribeRequest(BaseModel):
         None, description="通知配置（可选，指定渠道和自定义 webhook）"
     )
 
-    @field_validator("wechat_webhook")
+    @field_validator("wechat_webhook", "feishu_webhook")
     @classmethod
     def validate_webhook_url(cls, v):
         """验证 webhook URL 安全性（防止 SSRF）"""

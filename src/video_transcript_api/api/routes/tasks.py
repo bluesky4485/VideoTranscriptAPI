@@ -129,16 +129,18 @@ async def transcribe_video(
             if feishu_wh:
                 notification_webhooks["feishu"] = feishu_wh
 
-            # Per-request overrides
+            # Per-request overrides (top-level fields > notification_config)
             effective_channel = None
+            if request_body.wechat_webhook:
+                notification_webhooks["wechat"] = request_body.wechat_webhook
+            if request_body.feishu_webhook:
+                notification_webhooks["feishu"] = request_body.feishu_webhook
+
             notification_config = getattr(request_body, "notification_config", None)
             if notification_config and notification_config.webhook:
                 effective_channel = notification_config.channel
                 if effective_channel:
                     notification_webhooks[effective_channel] = notification_config.webhook
-            elif request_body.wechat_webhook:
-                effective_channel = "wechat"
-                notification_webhooks["wechat"] = request_body.wechat_webhook
 
             task_queue = get_task_queue()
             task = {

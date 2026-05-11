@@ -34,6 +34,7 @@ skill/
 | `VIDEO_TRANSCRIPT_API_TOKEN` | ✅ | Bearer token（`config.jsonc` 的 `api.auth_token` 或 `users.json` 里的 key）|
 | `VIDEO_TRANSCRIPT_API_PUBLIC_URL` | — | **给用户点的公网地址**（可选）。不设时用 BASE_URL。如 `https://vt.example.com` |
 | `VIDEO_TRANSCRIPT_API_WECHAT_WEBHOOK` | — | **企业微信 webhook 默认值**（可选）。设置后 submit 自动带上，`--webhook` 传参时覆盖。如 `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx` |
+| `VIDEO_TRANSCRIPT_API_FEISHU_WEBHOOK` | — | **飞书 webhook 默认值**（可选）。设置后 submit 自动带上，`--feishu-webhook` 传参时覆盖。如 `https://open.feishu.cn/open-apis/bot/v2/hook/xxx` |
 
 **为什么分两个地址**：API 请求追求低延迟，通常走内网；但返给用户的 `/view/<token>` 链接需要能从公网打开。配了 PUBLIC_URL 后，`submit` / `status` / `history` 打印给用户的链接会自动用公网域名拼。
 
@@ -51,7 +52,8 @@ skill/
        "VIDEO_TRANSCRIPT_API_BASE_URL": "http://your-server:8000",
        "VIDEO_TRANSCRIPT_API_TOKEN": "sk-xxx...",
        "VIDEO_TRANSCRIPT_API_PUBLIC_URL": "https://vt.example.com",
-       "VIDEO_TRANSCRIPT_API_WECHAT_WEBHOOK": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"
+       "VIDEO_TRANSCRIPT_API_WECHAT_WEBHOOK": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx",
+       "VIDEO_TRANSCRIPT_API_FEISHU_WEBHOOK": "https://open.feishu.cn/open-apis/bot/v2/hook/xxx"
      }
    }
    ```
@@ -70,7 +72,8 @@ skill/
        "VIDEO_TRANSCRIPT_API_BASE_URL": "<API 服务地址>",
        "VIDEO_TRANSCRIPT_API_TOKEN": "<Bearer token>",
        "VIDEO_TRANSCRIPT_API_PUBLIC_URL": "<公网地址，可选，不设时用 BASE_URL>",
-       "VIDEO_TRANSCRIPT_API_WECHAT_WEBHOOK": "<企微 webhook，可选>"
+       "VIDEO_TRANSCRIPT_API_WECHAT_WEBHOOK": "<企微 webhook，可选>",
+       "VIDEO_TRANSCRIPT_API_FEISHU_WEBHOOK": "<飞书 webhook，可选>"
      }
    }
    注意：不要覆盖 settings.json 里已有的其他配置，只合并 env 部分。
@@ -105,6 +108,7 @@ skill/
    VIDEO_TRANSCRIPT_API_TOKEN=<Bearer token>
    VIDEO_TRANSCRIPT_API_PUBLIC_URL=<公网地址，可选，不设时用 BASE_URL>
    VIDEO_TRANSCRIPT_API_WECHAT_WEBHOOK=<企微 webhook，可选>
+   VIDEO_TRANSCRIPT_API_FEISHU_WEBHOOK=<飞书 webhook，可选>
 3. 验证连通性：先试 python3 跑 health 命令，python3 不可用则用 python，都不行就用 curl <API 服务地址>/health
 ```
 

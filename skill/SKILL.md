@@ -20,6 +20,9 @@ metadata:
       - name: VIDEO_TRANSCRIPT_API_WECHAT_WEBHOOK
         description: 企业微信 webhook 默认值（可选）。--webhook 传参时覆盖
         required: false
+      - name: VIDEO_TRANSCRIPT_API_FEISHU_WEBHOOK
+        description: 飞书 webhook 默认值（可选）。--feishu-webhook 传参时覆盖
+        required: false
   hermes:
     required_environment_variables:
       - name: VIDEO_TRANSCRIPT_API_BASE_URL
@@ -35,6 +38,11 @@ metadata:
       - name: VIDEO_TRANSCRIPT_API_WECHAT_WEBHOOK
         prompt: 企业微信 webhook（可选，回车跳过）
         help: 设置后 submit 自动推送企微通知，--webhook 传参时覆盖
+        optional: true
+        required: false
+      - name: VIDEO_TRANSCRIPT_API_FEISHU_WEBHOOK
+        prompt: 飞书 webhook（可选，回车跳过）
+        help: 设置后 submit 自动推送飞书通知，--feishu-webhook 传参时覆盖
         optional: true
         required: false
 ---
@@ -82,6 +90,7 @@ skill 在调用时从环境读取，**不要**在对话里要求用户粘贴 tok
 | `VIDEO_TRANSCRIPT_API_TOKEN` | ✅ | Bearer token | `config.jsonc` 里 `api.auth_token` 或 `users.json` 的某个 key |
 | `VIDEO_TRANSCRIPT_API_PUBLIC_URL` | —  | 给用户点的**公网**地址，不设时用 BASE_URL | `https://vt.example.com` |
 | `VIDEO_TRANSCRIPT_API_WECHAT_WEBHOOK` | —  | 企业微信 webhook 默认值，`--webhook` 传参时覆盖 | `https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx` |
+| `VIDEO_TRANSCRIPT_API_FEISHU_WEBHOOK` | —  | 飞书 webhook 默认值，`--feishu-webhook` 传参时覆盖 | `https://open.feishu.cn/open-apis/bot/v2/hook/xxx` |
 
 **为啥分两个地址**：服务端常跑在内网/tailnet（BASE_URL 用这个，请求最快），但用户拿 `/view/<token>` 链接可能从公网打开。配 PUBLIC_URL 后，skill 返回给用户的查看页面 URL 用公网域名拼，无论用户在哪张网都点得开。没配 PUBLIC_URL 的场景（纯本机 / 都在一张网内）行为不变。
 
@@ -107,6 +116,7 @@ python3 scripts/videotranscript.py submit <url> [options]
 常用 options：
 - `--speaker`：启用说话人识别（FunASR 引擎，结果会按说话人分段，但更慢）
 - `--webhook URL`：完成后推送企业微信（覆盖服务端默认 webhook）
+- `--feishu-webhook URL`：完成后推送飞书（覆盖服务端默认飞书 webhook）
 - `--title "..."`, `--author "..."`, `--description "..."`：覆盖自动解析的元数据
 - `--download-url URL`：绕过平台解析，用直链下载音视频
 
