@@ -52,10 +52,68 @@ class BusinessError(Exception):
     """Valid response but logical failure (task failed, 404) — exit 1."""
 
 
+# ---------- Env fallback ----------
+
+_env_loaded = False
+
+
+def _load_env_files() -> None:
+    """从常见配置文件补全缺失的环境变量（不覆盖已有值）。
+
+    按优先级依次尝试：
+    1. ~/.hermes/.env          — Hermes 的标准 env 存储
+    2. ~/.claude/settings.json — Claude Code 的 env 字段
+    3. 脚本同级目录的 .env    — 本地开发用
+    """
+    global _env_loaded
+    if _env_loaded:
+        return
+    _env_loaded = True
+
+    home = os.path.expanduser("~")
+
+    # .env 格式：KEY=VALUE（忽略注释和空行）
+    for env_path in [
+        os.path.join(home, ".hermes", ".env"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
+    ]:
+        if os.path.isfile(env_path):
+            try:
+                with open(env_path, encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        if "=" not in line:
+                            continue
+                        key, _, value = line.partition("=")
+                        key = key.strip()
+                        value = value.strip().strip("'\"")
+                        if key and key not in os.environ:
+                            os.environ[key] = value
+            except OSError:
+                pass
+
+    # Claude Code settings.json
+    settings_path = os.path.join(home, ".claude", "settings.json")
+    if os.path.isfile(settings_path):
+        try:
+            with open(settings_path, encoding="utf-8") as f:
+                settings = json.loads(f.read())
+            env_dict = settings.get("env")
+            if isinstance(env_dict, dict):
+                for key, value in env_dict.items():
+                    if key not in os.environ and isinstance(value, str):
+                        os.environ[key] = value
+        except (OSError, json.JSONDecodeError):
+            pass
+
+
 # ---------- HTTP helpers ----------
 
 
 def _require_env(name: str) -> str:
+    _load_env_files()
     val = os.environ.get(name)
     if not val:
         raise ConfigError(

@@ -85,20 +85,20 @@ skill/
 
 ### Hermes
 
-1. 把 `skill/` 同步到 Hermes skill 目录。
-2. 运行 `hermes setup` —— 会根据 SKILL.md frontmatter 里的 `metadata.hermes.env` 声明提示你填值。
+1. 把 `skill/` 同步到 Hermes skill 目录（`~/.hermes/skills/videotranscript-api/`）。
+2. 环境变量写入 `~/.hermes/.env`（Hermes 的标准持久化方式，每次 skill 执行时自动注入）。也可以跑 `hermes setup`，会根据 SKILL.md frontmatter 里的 `required_environment_variables` 交互式提示填值。
 
 **首次安装 prompt**（复制后把 `<...>` 占位符换成实际值）：
 
 ```
 帮我安装 videotranscript-api skill。
 
-1. 把 https://github.com/zj1123581321/VideoTranscriptAPI.git 仓库里的 skill/ 目录复制到 Hermes 的 skill 目录下，命名为 videotranscript-api/
-2. 运行 hermes setup，按提示填入以下环境变量：
-   - VIDEO_TRANSCRIPT_API_BASE_URL=<API 服务地址，内网优先>
-   - VIDEO_TRANSCRIPT_API_TOKEN=<Bearer token>
-   - VIDEO_TRANSCRIPT_API_PUBLIC_URL=<公网地址，可选，不设时用 BASE_URL>
-   - VIDEO_TRANSCRIPT_API_WECHAT_WEBHOOK=<企微 webhook，可选>
+1. 把 https://github.com/zj1123581321/VideoTranscriptAPI.git 仓库里的 skill/ 目录复制到 ~/.hermes/skills/videotranscript-api/
+2. 在 ~/.hermes/.env 文件中追加以下环境变量（如果文件不存在就创建，注意不要覆盖已有内容）：
+   VIDEO_TRANSCRIPT_API_BASE_URL=<API 服务地址，内网优先>
+   VIDEO_TRANSCRIPT_API_TOKEN=<Bearer token>
+   VIDEO_TRANSCRIPT_API_PUBLIC_URL=<公网地址，可选，不设时用 BASE_URL>
+   VIDEO_TRANSCRIPT_API_WECHAT_WEBHOOK=<企微 webhook，可选>
 3. 验证连通性：先试 python3 跑 health 命令，python3 不可用则用 python，都不行就用 curl <API 服务地址>/health
 ```
 

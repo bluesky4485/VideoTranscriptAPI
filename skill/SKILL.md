@@ -21,18 +21,21 @@ metadata:
         description: 企业微信 webhook 默认值（可选）。--webhook 传参时覆盖
         required: false
   hermes:
-    env:
+    required_environment_variables:
       - name: VIDEO_TRANSCRIPT_API_BASE_URL
-        description: API 请求地址（内网优先，低延迟），如 http://localhost:8000
-        required: true
+        prompt: API 请求地址（内网优先），如 http://localhost:8000
+        help: 服务端监听地址，通常是内网/tailnet/局域网 IP，图的是低延迟
       - name: VIDEO_TRANSCRIPT_API_TOKEN
-        description: Bearer token
-        required: true
+        prompt: Bearer token
+        help: 对应 config.jsonc 的 api.auth_token 或 users.json 中的 api_key
       - name: VIDEO_TRANSCRIPT_API_PUBLIC_URL
-        description: 给用户点的公网地址（可选），不设时用 BASE_URL
-        required: false
+        prompt: 给用户点的公网地址（可选，回车跳过）
+        help: 不设时用 BASE_URL。服务端在内网但用户从公网看 /view/ 页面时需要
+        optional: true
       - name: VIDEO_TRANSCRIPT_API_WECHAT_WEBHOOK
-        description: 企业微信 webhook 默认值（可选），--webhook 传参时覆盖
+        prompt: 企业微信 webhook（可选，回车跳过）
+        help: 设置后 submit 自动推送企微通知，--webhook 传参时覆盖
+        optional: true
         required: false
 ---
 
@@ -84,7 +87,7 @@ skill 在调用时从环境读取，**不要**在对话里要求用户粘贴 tok
 
 各平台配置方式：
 - **Claude Code**：写入 `~/.claude/settings.json` 的 `"env"` 字段（推荐，跨平台通用）；也可以写 shell profile 的 `export`，但 Windows 上 Git Bash 不一定会 source
-- **Hermes**：`hermes setup` 时按提示填入
+- **Hermes**：写入 `~/.hermes/.env`（`KEY=VALUE` 格式），或跑 `hermes setup` 交互式填入
 - **OpenClaw**：编辑 `~/.openclaw/openclaw.json`，在 `skills.entries.videotranscript-api.env` 下加这两三个
 
 缺失必填变量时脚本会用 exit 3 和明确的 stderr 消息报错。
