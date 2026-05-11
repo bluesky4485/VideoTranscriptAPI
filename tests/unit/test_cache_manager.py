@@ -395,3 +395,95 @@ class TestThreadSafety:
         assert errors == [], f"Thread errors: {errors}"
         results = cm.list_cache()
         assert len(results) == 5
+
+
+# ---------------------------------------------------------------------------
+# llm_config fallback for cache-hit tasks
+# ---------------------------------------------------------------------------
+
+class TestLLMConfigFallback:
+    """Tests for llm_config fallback when viewing cache-hit tasks.
+
+    When the same URL is submitted multiple times, later cache-hit tasks
+    have no llm_config. The view should fall back to the llm_config from
+    an earlier task under the same view_token.
+    """
+
+    def _create_task_at_time(self, cm, url, timestamp, llm_config_dict=None):
+        """Helper: create a task at a specific timestamp, optionally with llm_config."""
+        task_info = cm.create_task(url=url, platform="youtube", media_id="vid1")
+        task_id = task_info["task_id"]
+        cm.update_task_status(task_id, "success", platform="youtube", media_id="vid1")
+        # Force a specific created_at to control ordering
+        with cm._get_cursor() as cursor:
+            cursor.execute(
+                "UPDATE task_status SET created_at = ? WHERE task_id = ?",
+                (timestamp, task_id),
+            )
+        if llm_config_dict:
+            cm.update_task_llm_config(task_id, llm_config_dict)
+        return task_info
+
+    def test_fallback_returns_llm_config_from_earlier_task(self, cm):
+        """Cache-hit task should inherit llm_config from the original LLM task."""
+        _save_sample_capswriter(cm)
+        config = {"calibrate_model": "deepseek-v4", "summary_model": "deepseek-v4"}
+
+        # T=00:00: LLM task with config
+        self._create_task_at_time(
+            cm, "https://example.com/vid1", "2026-01-01 00:00:00", config
+        )
+        # T=01:00: cache-hit task, no config
+        cache_hit = self._create_task_at_time(
+            cm, "https://example.com/vid1", "2026-01-01 01:00:00"
+        )
+
+        view_data = cm.get_view_data_by_token(cache_hit["view_token"])
+        assert view_data is not None
+        assert view_data.get("llm_config") is not None
+        assert view_data["llm_config"]["calibrate_model"] == "deepseek-v4"
+
+    def test_fallback_returns_most_recent_llm_config(self, cm):
+        """When multiple tasks have llm_config, the most recent one wins."""
+        _save_sample_capswriter(cm)
+        old_config = {"calibrate_model": "old-model", "summary_model": "old-model"}
+        new_config = {"calibrate_model": "new-model", "summary_model": "new-model"}
+
+        # T=00:00: first LLM task
+        self._create_task_at_time(
+            cm, "https://example.com/vid1", "2026-01-01 00:00:00", old_config
+        )
+        # T=01:00: second LLM task (recalibrate)
+        self._create_task_at_time(
+            cm, "https://example.com/vid1", "2026-01-01 01:00:00", new_config
+        )
+        # T=02:00: cache-hit task
+        cache_hit = self._create_task_at_time(
+            cm, "https://example.com/vid1", "2026-01-01 02:00:00"
+        )
+
+        view_data = cm.get_view_data_by_token(cache_hit["view_token"])
+        assert view_data["llm_config"]["calibrate_model"] == "new-model"
+
+    def test_no_fallback_needed_when_latest_task_has_config(self, cm):
+        """Direct llm_config on the latest task should be used without fallback."""
+        _save_sample_capswriter(cm)
+        config = {"calibrate_model": "direct-model", "summary_model": "direct-model"}
+
+        task = self._create_task_at_time(
+            cm, "https://example.com/vid1", "2026-01-01 00:00:00", config
+        )
+
+        view_data = cm.get_view_data_by_token(task["view_token"])
+        assert view_data["llm_config"]["calibrate_model"] == "direct-model"
+
+    def test_no_llm_config_anywhere_returns_none(self, cm):
+        """If no task under this view_token has llm_config, return None."""
+        _save_sample_capswriter(cm)
+        cache_hit = self._create_task_at_time(
+            cm, "https://example.com/vid1", "2026-01-01 00:00:00"
+        )
+
+        view_data = cm.get_view_data_by_token(cache_hit["view_token"])
+        assert view_data is not None
+        assert view_data.get("llm_config") is None

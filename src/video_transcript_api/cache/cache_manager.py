@@ -922,8 +922,12 @@ class CacheManager:
                     if not isinstance(transcript, str):
                         transcript = str(transcript) if transcript is not None else '转录文本获取中...'
 
-                    # 获取 LLM 模型配置
+                    # 获取 LLM 模型配置（缓存命中任务无 llm_config，回退查同 view_token 下的历史任务）
                     llm_config = self.get_task_llm_config(task_info['task_id'])
+                    if not llm_config:
+                        llm_config = self._get_llm_config_by_view_token(
+                            task_info['view_token']
+                        )
 
                     return {
                         'status': 'success',
@@ -1201,4 +1205,29 @@ class CacheManager:
 
         except Exception as e:
             logger.error(f"获取LLM配置失败: {e}")
+            return None
+
+    def _get_llm_config_by_view_token(self, view_token: str) -> Optional[Dict[str, Any]]:
+        """回退查找：在同一 view_token 的所有任务中，找最新的 llm_config。
+
+        缓存命中的任务不经过 LLM 协调器，没有 llm_config。
+        此方法用于从同一 view_token 下实际跑过 LLM 的历史任务继承配置。
+        """
+        try:
+            with self._get_cursor() as cursor:
+                cursor.execute(
+                    """SELECT llm_config FROM task_status
+                       WHERE view_token = ?
+                         AND llm_config IS NOT NULL
+                         AND llm_config != ''
+                       ORDER BY created_at DESC
+                       LIMIT 1""",
+                    (view_token,),
+                )
+                row = cursor.fetchone()
+                if row and row['llm_config']:
+                    return json.loads(row['llm_config'])
+                return None
+        except Exception as e:
+            logger.error(f"回退查找LLM配置失败: {e}")
             return None
