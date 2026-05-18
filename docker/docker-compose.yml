@@ -10,7 +10,9 @@ services:
     environment:
       - TZ=Asia/Shanghai
     ports:
-      - "8000:8000"
+      # 宿主端口 8200（n305 上 portainer 已占 8000）；外部入口
+      # https://sum.lexgogo.site 经 Cloudflare Tunnel 落到 :8200。
+      - "8200:8000"
     volumes:
       # Configuration files (user must prepare before starting)
       - ../config:/app/config
