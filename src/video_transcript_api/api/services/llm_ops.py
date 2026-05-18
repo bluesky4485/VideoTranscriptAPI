@@ -502,8 +502,12 @@ def _send_notification(
     speaker_info = "（含说话人识别）" if use_speaker_recognition else ""
     model_config_text = format_llm_config_markdown(models_used)
 
+    # 校对文本超过此阈值时，不发送全文到通知渠道（避免刷屏）
+    NOTIFICATION_TEXT_THRESHOLD = 5000
+
     if skip_summary:
-        full_message = f"""## 总结和校对
+        if len(calibrated_text) <= NOTIFICATION_TEXT_THRESHOLD:
+            full_message = f"""## 总结和校对
 🌐 网页查看：{view_url}
 📄 直接获取：{view_url}?raw=calibrated
 
@@ -514,7 +518,22 @@ def _send_notification(
 
 ## 校对文本{speaker_info}
 {calibrated_text}"""
-        logger.info(f"发送校对文本（文本过短，未总结）: {task_id}")
+            logger.info(f"发送校对文本（总结未生成，文本较短直接发送）: {task_id}")
+        else:
+            full_message = f"""## 总结和校对
+🌐 网页查看：{view_url}
+📄 直接获取：{view_url}?raw=calibrated
+
+## 转录统计
+原始 {original_length:,} 字 | 校对 {calibrated_length:,} 字 | 总结 未生成{calibration_warning}
+
+{model_config_text}
+
+⚠️ 校对文本过长（{calibrated_length:,} 字），请点击上方链接在网页中查看完整内容。"""
+            logger.info(
+                f"校对文本过长（{calibrated_length} 字 > {NOTIFICATION_TEXT_THRESHOLD}），"
+                f"仅发送链接: {task_id}"
+            )
     else:
         full_message = f"""## 总结和校对
 🌐 网页查看：{view_url}
