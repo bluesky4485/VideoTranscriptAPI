@@ -182,6 +182,32 @@ async def home():
     return HTMLResponse(content=_HOME_HTML)
 
 
+def resolve_export_file_path(cache_dir: str, export_type: str) -> Optional[Path]:
+    """根据导出类型解析缓存文件路径.
+
+    统一三个导出入口(raw / page / export)的文件定位逻辑,避免重复。
+    transcript 类型优先 FunASR JSON,缺失时降级到 CapsWriter TXT。
+
+    Args:
+        cache_dir: 缓存目录
+        export_type: 导出类型(calibrated / summary / transcript)
+
+    Returns:
+        Path: 对应的文件路径;若 export_type 不支持则返回 None
+        （注意:返回的 Path 不保证存在,调用方需自行 .exists() 判断）
+    """
+    base = Path(cache_dir)
+    if export_type == "calibrated":
+        return base / "llm_calibrated.txt"
+    if export_type == "summary":
+        return base / "llm_summary.txt"
+    if export_type == "transcript":
+        funasr_file = base / "transcript_funasr.json"
+        capswriter_file = base / "transcript_capswriter.txt"
+        return funasr_file if funasr_file.exists() else capswriter_file
+    return None
+
+
 def _build_text_metadata_header(view_data: Dict[str, Any], export_type: str) -> str:
     """生成纯文本导出的 YAML front matter 风格元数据头.
 
@@ -443,15 +469,8 @@ def handle_page_export(view_data: Dict[str, Any], export_type: str) -> Response:
         )
 
     # 3. 根据导出类型确定文件路径
-    if export_type == "calibrated":
-        file_path = Path(cache_dir) / "llm_calibrated.txt"
-    elif export_type == "summary":
-        file_path = Path(cache_dir) / "llm_summary.txt"
-    elif export_type == "transcript":
-        funasr_file = Path(cache_dir) / "transcript_funasr.json"
-        capswriter_file = Path(cache_dir) / "transcript_capswriter.txt"
-        file_path = funasr_file if funasr_file.exists() else capswriter_file
-    else:
+    file_path = resolve_export_file_path(cache_dir, export_type)
+    if file_path is None:
         return HTMLResponse(
             content="<html><body><p>不支持的导出类型</p></body></html>",
             status_code=400,
@@ -623,19 +642,9 @@ def handle_raw_export(view_data: Dict[str, Any], export_type: str) -> Response:
             status_code=404,
         )
 
-    # 3. 根据导出类型确定文件路径
-    file_path = None
-
-    if export_type == "calibrated":
-        file_path = Path(cache_dir) / "llm_calibrated.txt"
-    elif export_type == "summary":
-        file_path = Path(cache_dir) / "llm_summary.txt"
-    elif export_type == "transcript":
-        # 优先返回 FunASR JSON，降级到 CapsWriter TXT
-        funasr_file = Path(cache_dir) / "transcript_funasr.json"
-        capswriter_file = Path(cache_dir) / "transcript_capswriter.txt"
-        file_path = funasr_file if funasr_file.exists() else capswriter_file
-    else:
+    # 3. 根据导出类型确定文件路径（优先 FunASR JSON，降级 CapsWriter TXT）
+    file_path = resolve_export_file_path(cache_dir, export_type)
+    if file_path is None:
         return Response(
             content=f"❌ 不支持的导出类型: {export_type}\n\n支持的类型: calibrated, summary, transcript",
             media_type="text/plain; charset=utf-8",
@@ -742,15 +751,8 @@ async def export_content(view_token: str, export_type: str, request: Request):
                 status_code=404,
             )
 
-        if export_type == "calibrated":
-            file_path = Path(cache_dir) / "llm_calibrated.txt"
-        elif export_type == "summary":
-            file_path = Path(cache_dir) / "llm_summary.txt"
-        elif export_type == "transcript":
-            funasr_file = Path(cache_dir) / "transcript_funasr.json"
-            capswriter_file = Path(cache_dir) / "transcript_capswriter.txt"
-            file_path = funasr_file if funasr_file.exists() else capswriter_file
-        else:
+        file_path = resolve_export_file_path(cache_dir, export_type)
+        if file_path is None:
             return Response(
                 content=f"❌ 不支持的导出类型: {export_type}\n\n支持的类型: calibrated, summary, transcript",
                 media_type="text/plain; charset=utf-8",
