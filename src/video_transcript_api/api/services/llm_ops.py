@@ -31,6 +31,7 @@ from ...utils.notifications import (
 from ...utils.notifications.channel import _clean_url, _apply_risk_control_safe
 from ...utils.rendering import get_base_url
 from ...utils.perf_tracker import PerfTracker
+from ...utils.task_status import TaskStatus
 
 logger = get_logger()
 config = get_config()
@@ -175,21 +176,19 @@ def _handle_llm_task(llm_task: dict):
                 # 任务成功完成，输出完整性能摘要
                 tracker.log_summary()
 
-                # calibrate_only 模式更新状态
-                if calibrate_only and platform and media_id:
-                    cache_manager.update_task_status(
-                        task_id,
-                        "success",
-                        platform=platform,
-                        media_id=media_id,
-                        title=video_title,
-                        author=llm_task.get("author", ""),
-                    )
-                    task_results[task_id] = {
-                        "status": "success",
-                        "message": "重新校对完成",
-                    }
-                    logger.info(f"重新校对任务状态已更新为 success: {task_id}")
+                # LLM 阶段拥有终态：产物已通过 _save_llm_results 落盘，此时才置 success
+                # （对所有任务生效，不再仅限 calibrate_only；终态由本阶段统一写回）
+                done_message = "重新校对完成" if calibrate_only else "校对完成"
+                cache_manager.update_task_status(
+                    task_id,
+                    TaskStatus.SUCCESS,
+                    platform=platform,
+                    media_id=media_id,
+                    title=video_title,
+                    author=llm_task.get("author", ""),
+                )
+                task_results[task_id] = {"status": "success", "message": done_message}
+                logger.info(f"任务状态已更新为 success: {task_id}")
 
             except Exception as exc:
                 logger.exception(f"LLM任务处理异常: {task_id}, 错误: {exc}")
@@ -197,16 +196,19 @@ def _handle_llm_task(llm_task: dict):
                 tracker.log_summary()
                 task_notifier.send_text(f"【LLM API调用异常】{exc}")
 
-                if llm_task.get("calibrate_only"):
-                    try:
-                        cache_manager.update_task_status(task_id, "failed")
-                        task_results[task_id] = {
-                            "status": "failed",
-                            "message": f"重新校对失败: {exc}",
-                        }
-                        logger.info(f"重新校对任务状态已更新为 failed: {task_id}")
-                    except Exception:
-                        pass
+                # 终态由 LLM 阶段统一写回（对所有任务生效，修复普通任务 LLM 失败被静默的问题）
+                fail_message = (
+                    f"重新校对失败: {exc}" if llm_task.get("calibrate_only")
+                    else f"LLM处理失败: {exc}"
+                )
+                try:
+                    cache_manager.update_task_status(
+                        task_id, TaskStatus.FAILED, error_message=fail_message,
+                    )
+                    task_results[task_id] = {"status": "failed", "message": fail_message}
+                    logger.info(f"任务状态已更新为 failed: {task_id}")
+                except Exception:
+                    pass
     finally:
         llm_task_queue.task_done()
 

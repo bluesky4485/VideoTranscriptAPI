@@ -30,6 +30,7 @@ from ...utils.notifications import (
 from ...utils.notifications.channel import _clean_url
 from ...utils.rendering import get_base_url
 from ...utils.perf_tracker import PerfTracker
+from ...utils.task_status import TaskStatus
 
 logger = get_logger()
 config = get_config()
@@ -551,9 +552,10 @@ def process_transcription(
 
                 logger.info(f"已发送缓存的 LLM 结果: {video_title}")
 
+                # 缓存全命中（含 LLM 结果）：无后续 LLM 工作，直接置终态 success
                 cache_manager.update_task_status(
                     task_id,
-                    "success",
+                    TaskStatus.SUCCESS,
                     platform=cache_data.get("platform"),
                     media_id=cache_data.get("media_id"),
                     title=video_title,
@@ -615,9 +617,23 @@ def process_transcription(
                 logger.info(
                     f"将LLM任务加入队列: {task_id}, 标题: {video_title}, 说话人识别: {has_speaker_recognition}"
                 )
+                # 转录已就绪、LLM 校对/总结进行中 → calibrating（终态由 LLM 阶段写）
+                cache_manager.update_task_status(
+                    task_id,
+                    TaskStatus.CALIBRATING,
+                    platform=cache_data.get("platform"),
+                    media_id=cache_data.get("media_id"),
+                    title=video_title,
+                    author=author,
+                    download_url=download_url,
+                )
             except Exception as exc:
                 logger.exception(f"将LLM任务加入队列失败（缓存）: {exc}")
                 task_notifier.send_text(f"【LLM任务加入队列失败】{exc}")
+                cache_manager.update_task_status(
+                    task_id, TaskStatus.FAILED,
+                    error_message=f"LLM任务加入队列失败: {exc}",
+                )
 
             return {
                 "status": "success",
@@ -816,10 +832,16 @@ def process_transcription(
                                 f"[youtube-api] Failed to queue LLM task: {exc}"
                             )
                             task_notifier.send_text(f"【LLM任务加入队列失败】{exc}")
+                            cache_manager.update_task_status(
+                                task_id, TaskStatus.FAILED,
+                                error_message=f"LLM任务加入队列失败: {exc}",
+                            )
+                            return {"status": "failed", "message": f"LLM任务加入队列失败: {exc}"}
 
+                        # 转录就绪、LLM 校对/总结进行中 → calibrating（终态由 LLM 阶段写）
                         cache_manager.update_task_status(
                             task_id,
-                            "success",
+                            TaskStatus.CALIBRATING,
                             platform=platform,
                             media_id=media_id,
                             title=video_title,
@@ -944,10 +966,16 @@ def process_transcription(
                                 f"[youtube-api] Failed to queue LLM task: {exc}"
                             )
                             task_notifier.send_text(f"【LLM任务加入队列失败】{exc}")
+                            cache_manager.update_task_status(
+                                task_id, TaskStatus.FAILED,
+                                error_message=f"LLM任务加入队列失败: {exc}",
+                            )
+                            return {"status": "failed", "message": f"LLM任务加入队列失败: {exc}"}
 
+                        # 转录就绪、LLM 校对/总结进行中 → calibrating（终态由 LLM 阶段写）
                         cache_manager.update_task_status(
                             task_id,
-                            "success",
+                            TaskStatus.CALIBRATING,
                             platform=platform,
                             media_id=media_id,
                             title=video_title,
@@ -1067,6 +1095,11 @@ def process_transcription(
                 except Exception as exc:
                     logger.exception(f"将LLM任务加入队列失败（平台字幕）: {exc}")
                     task_notifier.send_text(f"【LLM任务加入队列失败】{exc}")
+                    cache_manager.update_task_status(
+                        task_id, TaskStatus.FAILED,
+                        error_message=f"LLM任务加入队列失败: {exc}",
+                    )
+                    return {"status": "failed", "message": f"LLM任务加入队列失败: {exc}"}
 
                 result = {
                     "status": "success",
@@ -1077,9 +1110,10 @@ def process_transcription(
                         "transcript": subtitle,
                     },
                 }
+                # 转录就绪、LLM 校对/总结进行中 → calibrating（终态由 LLM 阶段写）
                 cache_manager.update_task_status(
                     task_id,
-                    "success",
+                    TaskStatus.CALIBRATING,
                     platform=platform,
                     media_id=video_id,
                     title=video_title,
@@ -1286,6 +1320,11 @@ def process_transcription(
                     except Exception as exc:
                         logger.exception(f"将LLM任务加入队列失败（常规转录）: {exc}")
                         task_notifier.send_text(f"【LLM任务加入队列失败】{exc}")
+                        cache_manager.update_task_status(
+                            task_id, TaskStatus.FAILED,
+                            error_message=f"LLM任务加入队列失败: {exc}",
+                        )
+                        return {"status": "failed", "message": f"LLM任务加入队列失败: {exc}"}
 
                     # 返回结果
                     result = {
@@ -1301,10 +1340,10 @@ def process_transcription(
                 finally:
                     pass
 
-                # 更新任务状态为成功
+                # 转录就绪、LLM 校对/总结进行中 → calibrating（终态由 LLM 阶段写）
                 cache_manager.update_task_status(
                     task_id,
-                    "success",
+                    TaskStatus.CALIBRATING,
                     platform=platform,
                     media_id=video_id,
                     title=video_title,
@@ -1322,7 +1361,10 @@ def process_transcription(
             url=display_url, status="转录异常", error=str(exc),
             channel_name=notification_channel, webhooks=notification_webhooks,
         )
-        cache_manager.update_task_status(task_id, "failed", download_url=download_url)
+        cache_manager.update_task_status(
+            task_id, TaskStatus.FAILED, download_url=download_url,
+            error_message=f"转录任务异常: {exc}",
+        )
         return {
             "status": "failed",
             "message": f"转录任务异常: {exc}",
