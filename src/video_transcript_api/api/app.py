@@ -9,7 +9,7 @@ from ..utils.notifications import init_all_notifiers, shutdown_all_notifiers
 from ..utils.ytdlp import YtdlpConfigBuilder
 from ..llm import set_default_config, log_llm_stats
 from ..llm.llm import log_llm_config_summary
-from .context import get_config, get_logger, get_static_dir, get_temp_manager
+from .context import get_cache_manager, get_config, get_logger, get_static_dir, get_temp_manager
 from .routes import audit, health, tasks, users, views
 from .services.transcription import process_llm_queue, process_task_queue
 
@@ -74,6 +74,15 @@ def create_app() -> FastAPI:
             logger.info(f"启动时清理了 {old_files_count} 个旧临时文件")
 
         init_all_notifiers()
+
+        # 启动恢复：把上次进程中断遗留的非终态任务（queued/processing/calibrating）
+        # 标记为 failed。内存任务队列随进程崩溃丢失，否则这些任务会永久卡在处理中。
+        try:
+            recovered = get_cache_manager().recover_orphaned_tasks()
+            if recovered:
+                logger.warning(f"启动恢复：已将 {recovered} 个中断任务标记为 failed")
+        except Exception as exc:
+            logger.exception("启动恢复扫描失败: %s", exc)
 
         # 设置 LLM 模块默认配置（用于 JSON 结构化输出）
         set_default_config(config)
