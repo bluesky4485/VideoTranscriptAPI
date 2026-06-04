@@ -97,8 +97,9 @@ logs
 tests/output
 *nul
 
-# Claude Code 临时目录
+# Claude Code 临时目录与本地配置
 tmpclaude-*
+.claude/
 
 tests/unit/data
 
