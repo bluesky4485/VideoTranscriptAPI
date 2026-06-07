@@ -17,19 +17,11 @@ from ..utils.logging import setup_logger, load_config, ensure_dir
 
 logger = setup_logger("downloaders")
 
-_temp_manager = None
-
-
 def get_temp_manager():
-    """获取临时文件管理器单例"""
-    global _temp_manager
-    if _temp_manager is None:
-        from ..utils.tempfile_manager import TempFileManager
+    """获取临时文件管理器单例（下沉到 utils 的全局共享实例）。"""
+    from ..utils.tempfile_manager import get_shared_temp_manager
 
-        config = load_config()
-        temp_dir = config.get("storage", {}).get("temp_dir", "./data/temp")
-        _temp_manager = TempFileManager(temp_dir)
-    return _temp_manager
+    return get_shared_temp_manager()
 
 
 class BaseDownloader(ABC):

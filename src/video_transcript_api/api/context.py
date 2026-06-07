@@ -15,7 +15,7 @@ from ..llm import LLMCoordinator
 from ..utils.logging import get_audit_logger as _get_audit_logger_impl
 from ..utils.logging import load_config as _load_config_impl
 from ..utils.logging import setup_logger
-from ..utils.tempfile_manager import TempFileManager
+from ..utils.tempfile_manager import get_shared_temp_manager
 
 # Lazy initialized runtime resources
 _task_queue: asyncio.Queue | None = None
@@ -59,8 +59,8 @@ def get_cache_manager():
 
 @lru_cache
 def get_temp_manager():
-    temp_dir = get_config().get("storage", {}).get("temp_dir", "./data/temp")
-    return TempFileManager(temp_dir)
+    # 复用 utils 层的全局共享单例，确保 api 层与 downloaders 层看同一张登记表
+    return get_shared_temp_manager()
 
 
 @lru_cache

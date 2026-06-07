@@ -236,3 +236,9 @@ def test_get_shared_temp_manager_is_singleton():
     a = get_shared_temp_manager()
     b = get_shared_temp_manager()
     assert a is b
+
+
+def test_base_downloader_uses_shared_manager():
+    """downloaders/base.py 与 utils 共享同一个 TempFileManager 实例。"""
+    from src.video_transcript_api.downloaders import base as base_mod
+    assert base_mod.get_temp_manager() is get_shared_temp_manager()
