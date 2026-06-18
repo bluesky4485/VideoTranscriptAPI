@@ -655,6 +655,11 @@ if config.quality_validation.enabled:
 
 ### 步骤 3.3 补充：结构一致性检查应“强制执行”（即使关闭质量验证）
 
+> ⚠️ **v2.0（ID 锚点）后本节已基本失效**：校对合并改为 `_apply_corrections_by_id`，
+> 输出对话的条数、顺序、speaker、时间戳**结构性地**恒等于原始 chunk（LLM 只回 `{id, text}`，
+> 碰不到结构）。因此 `_check_dialog_structure` 在 v2.0 下**恒通过**，不再需要“强制结构检查 + 失败降级”。
+> 详见 `structured_calibration_guide.md` 顶部「v2.0 重大变更」节。下文为 v1.0 历史背景。
+
 > **问题**：如果质量验证默认关闭，当前流程只依赖 LLM 输出，可能出现说话人被改写但未被发现。  
 > 对话结构一致性是“硬约束”，不应由开关控制。
 

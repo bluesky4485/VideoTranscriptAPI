@@ -1,9 +1,55 @@
 # 结构化 JSON 文本校对流程设计文档
 
-> **文档版本**: v1.0
-> **创建时间**: 2026-01-27
+> **文档版本**: v2.0（ID 锚点重设计）
+> **创建时间**: 2026-01-27 ｜ **重大更新**: 2026-06-18
 > **适用范围**: 重构后的 LLM 校对系统
 > **核心目标**: 保留时间戳和对话结构，实现高质量的结构化文本校对
+
+---
+
+## ⚠️ v2.0 重大变更（ID 锚点契约）— 以本节为准
+
+> 下文 v1.0 正文中关于「校对输出 Schema」「合并逻辑」「对话数量必须相等」的描述**已过时**，
+> 以本节为准。流程图、分块、关键信息提取等其余部分仍然有效。
+
+**问题**：v1.0 让 LLM 回传 `calibrated_dialogs:[{start_time, speaker, text}]`，并在合并时**强制要求
+对话数量与 speaker 逐条相等**，否则**整块回退到原始 ASR**。LLM 在润色口语时偶尔合并/拆句导致条数变化，
+于是一整块（十几段）连同 key_info 专有名词纠错被全部丢弃，退回零校对（线上 VOL.170「威皇小海鲜」案例）。
+
+**v2.0 设计原则**：时间戳 / 说话人 / 对话数量是 funasr 的 ground truth，由确定性管线独占，
+**LLM 绝不回传、也无法影响**。LLM 仅按 **id 锚点**返回 `{id, text}` 修正项，合并时**按 id 查表**。
+「结构不匹配导致整块作废」这一故障类**从根上消失**。
+
+| 维度 | v1.0（旧） | v2.0（ID 锚点） |
+|------|-----------|----------------|
+| 输出 Schema | `calibrated_dialogs:[{start_time,speaker,text}]` | `corrections:[{id,text}]` |
+| 合并方式 | 按位置逐条，数量/speaker 必须全等 | 按 id 查表，`id == chunk 内 0 基下标` |
+| 结构不匹配 | **整块回退原文**（丢弃全部修正） | 不存在；缺号→仅该条保留原文 |
+| 时间戳/speaker | LLM 回传后再校验 | 全程在数据侧，LLM 碰不到 |
+| 低覆盖（截断/偷懒） | 无感知 | `min_correction_coverage`(默认0.5) 触发重试，耗尽取最佳候选（永不劣于原文） |
+| 失败粒度 | 块级 `fallback`/`failed` | 增 `partial` + 对话级 `dialog_counts`（applied/kept_original/unknown_id/duplicate_id/malformed） |
+
+**核心实现**：`SpeakerAwareProcessor._apply_corrections_by_id()`（替代 `_merge_calibrated_with_original`，后者已删除）。
+**新 Schema**：
+```python
+CALIBRATION_RESULT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "corrections": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"id": {"type": "integer"}, "text": {"type": "string"}},
+                "required": ["id", "text"], "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["corrections"], "additionalProperties": False,
+}
+```
+**prompt 输入行格式**：`[id][HH:MM:SS][说话人]: 内容`（id 为锚点，时间戳仅作上下文，LLM 不回传）。
+**缓存**：`llm_processed.json` 的 `format_version` 升至 `v3`（仅溯源标记，不 gate 复用；历史 v2 缓存为修复前文本，需手动重处理）。
+**测试**：`tests/unit/test_calibration_id_anchor.py`（含 VOL.170 回归）、`tests/unit/test_calibration_stats.py`。
 
 ---
 
@@ -29,10 +75,10 @@
 - `speaker`：说话人标识（可以是映射后的真实姓名）
 - `original_text`：原始文本（用于对比）
 
-✅ **必须满足的约束**：
-- 对话数量保持不变（`len(input) == len(output)`）
-- 对话顺序保持不变
-- 时间戳完全一致（不信任 LLM 生成的时间戳）
+✅ **必须满足的约束**（v2.0：由 ID 锚点天然保证，不再依赖 LLM 自觉）：
+- 对话数量保持不变 —— v2.0 由「按 id 查表、缺号保留原文」结构性保证，**不再要求 LLM 输出条数相等**
+- 对话顺序保持不变 —— v2.0 由 id 锚定，与 LLM 返回顺序无关
+- 时间戳完全一致 —— v2.0 时间戳/speaker 全程在数据侧，LLM 不回传
 - 只校对 `text` 字段
 
 ---
@@ -336,12 +382,13 @@ def calibrate_single_chunk(index: int, chunk: List[Dict]):
     # ]
 ```
 
-**Response Schema**（`schemas/calibration.py`）：
+**Response Schema**（`schemas/calibration.py`）：⚠️ **以下为 v1.0 旧 Schema，已被 v2.0 `corrections:[{id,text}]` 取代**，见顶部「v2.0 重大变更」节。
 ```python
+# v1.0（已废弃）
 CALIBRATION_RESULT_SCHEMA = {
     "type": "object",
     "properties": {
-        "calibrated_dialogs": {
+        "calibrated_dialogs": {  # v2.0 改为 corrections:[{id, text}]
             "type": "array",
             "items": {
                 "type": "object",
@@ -360,15 +407,20 @@ CALIBRATION_RESULT_SCHEMA = {
 
 **注意**：
 - ❌ **不要求 LLM 生成 `end_time` 和 `duration`**（避免错误）
-- ✅ **后续通过合并逻辑从原始对话补充**
+- ✅ **后续通过合并逻辑从原始对话补充**（v2.0：speaker/start_time 也一并由数据侧补充，LLM 仅回 `{id, text}`）
 
 ---
 
 #### 步骤 4：合并逻辑（核心）✅
 
+> ⚠️ **v2.0 已变更**：下方 `_merge_calibrated_with_original`（按位置逐条 + 数量必须相等 + 不等则整块回退）
+> **已被删除**，替换为 `_apply_corrections_by_id`（按 id 查表，缺号保留原文，永不整块作废）。
+> 旧实现保留于此仅作历史对照，详见顶部「v2.0 重大变更」节。
+
 **目的**：将 LLM 返回的部分字段与原始对话合并，保留完整时间戳
 
 ```python
+# v1.0（已删除，仅历史对照）
 def _merge_calibrated_with_original(
     self,
     calibrated_dialogs: List[Dict],
@@ -642,7 +694,11 @@ def test_structured_calibration():
 
 ### Q2: 如果 LLM 返回的对话数量不匹配怎么办？
 
-**A**: `_merge_calibrated_with_original()` 会检测数量不匹配，直接返回原始对话（降级策略）。
+**A**（v2.0）：不再有「数量不匹配」这个问题。`_apply_corrections_by_id()` 按 id 查表合并——
+LLM 返回多少、顺序如何都无所谓：命中的 id 用校对文本，缺失的 id 保留原文，越界/重复/非法的修正被计数并忽略。
+整块永远不会因为条数对不上而被丢弃。若被返回修正的对话占比低于 `min_correction_coverage`（默认 0.5，疑似截断/偷懒），
+会触发重试，重试耗尽则采用覆盖率最高的候选（仍不劣于原文）。
+（v1.0 旧行为：`_merge_calibrated_with_original()` 检测数量不匹配后整块回退原文——已废弃。）
 
 ### Q3: 拆分超长对话会破坏时间戳吗？
 
